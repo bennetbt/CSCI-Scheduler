@@ -97,8 +97,8 @@ class Scheduler {
         this.renderScheduleGrid();
         this.renderUnassignedClasses();
 
-        // Load saved data if exists
-        this.loadFromLocalStorage();
+        // Load saved data from server
+        this.loadFromServer();
     }
 
     addSampleClasses() {
@@ -128,14 +128,12 @@ class Scheduler {
 
         // Save button
         document.getElementById('saveBtn').addEventListener('click', () => {
-            this.saveToLocalStorage();
-            alert('Schedule saved successfully!');
+            this.saveToServer();
         });
 
         // Load button
         document.getElementById('loadBtn').addEventListener('click', () => {
-            this.loadFromLocalStorage();
-            alert('Schedule loaded successfully!');
+            this.loadFromServer();
         });
 
         // Export button
@@ -934,48 +932,77 @@ class Scheduler {
         this.renderUnassignedClasses();
     }
 
-    saveToLocalStorage() {
+    async saveToServer() {
         const data = {
             config: this.config,
             classes: this.classes,
             schedule: this.schedule,
             nextClassId: this.nextClassId
         };
-        localStorage.setItem('scheduleData', JSON.stringify(data));
-    }
-
-    loadFromLocalStorage() {
-        const savedData = localStorage.getItem('scheduleData');
-        if (!savedData) return;
 
         try {
-            const data = JSON.parse(savedData);
+            const response = await fetch('/api/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
 
-            // Restore config with backward compatibility
-            if (data.config) {
-                this.config = new ScheduleConfig();
-                this.config.rooms = data.config.rooms || this.config.rooms;
-                this.config.days = data.config.days || this.config.days;
+            const result = await response.json();
 
-                // Handle both old timeBlocks and new timeBlocksByDay
-                if (data.config.timeBlocksByDay) {
-                    this.config.timeBlocksByDay = data.config.timeBlocksByDay;
-                } else if (data.config.timeBlocks) {
-                    // Migrate old format to new format
-                    this.config.days.forEach(day => {
-                        this.config.timeBlocksByDay[day] = data.config.timeBlocks;
-                    });
-                }
+            if (result.success) {
+                alert('Schedule saved successfully!');
+            } else {
+                alert('Error saving schedule: ' + result.error);
             }
+        } catch (error) {
+            console.error('Error saving to server:', error);
+            alert('Error saving schedule. Please check your connection.');
+        }
+    }
 
-            this.classes = data.classes.map(c => new ClassItem(c.id, c.name, c.title, c.instructor, c.enrollment, c.duration));
-            this.schedule = data.schedule;
-            this.nextClassId = data.nextClassId;
+    async loadFromServer() {
+        try {
+            const response = await fetch('/api/load');
+            const result = await response.json();
 
-            this.renderScheduleGrid();
-            this.renderUnassignedClasses();
-        } catch (e) {
-            console.error('Error loading saved data:', e);
+            if (result.success && result.data) {
+                const data = result.data;
+
+                // Restore config with backward compatibility
+                if (data.config) {
+                    this.config = new ScheduleConfig();
+                    this.config.rooms = data.config.rooms || this.config.rooms;
+                    this.config.days = data.config.days || this.config.days;
+
+                    // Handle both old timeBlocks and new timeBlocksByDay
+                    if (data.config.timeBlocksByDay) {
+                        this.config.timeBlocksByDay = data.config.timeBlocksByDay;
+                    } else if (data.config.timeBlocks) {
+                        // Migrate old format to new format
+                        this.config.days.forEach(day => {
+                            this.config.timeBlocksByDay[day] = data.config.timeBlocks;
+                        });
+                    }
+                }
+
+                this.classes = data.classes.map(c => new ClassItem(c.id, c.name, c.title, c.instructor, c.enrollment, c.duration));
+                this.schedule = data.schedule;
+                this.nextClassId = data.nextClassId;
+
+                this.renderScheduleGrid();
+                this.renderUnassignedClasses();
+
+                console.log('Data loaded from server successfully');
+            } else if (!result.success) {
+                console.error('Error loading from server:', result.error);
+            } else {
+                console.log('No saved data found on server');
+            }
+        } catch (error) {
+            console.error('Error loading from server:', error);
+            console.log('Using default configuration');
         }
     }
 

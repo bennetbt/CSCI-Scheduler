@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  scheduler:
+    build: .
+    container_name: csci-scheduler
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persistent data storage - this ensures your data survives container restarts
+      - scheduler-data:/data
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  scheduler-data:
+    driver: local

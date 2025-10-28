@@ -6,23 +6,63 @@ A web-based drag-and-drop interface for scheduling classes across rooms, days, a
 
 - **Drag-and-Drop Interface**: Easily move classes between time slots by dragging and dropping
 - **Flexible Configuration**: Customize rooms, days, and time blocks to match your department's needs
+- **Per-Day Time Blocks**: Each day can have its own unique set of time blocks
+- **Faculty Conflict Detection**: Prevents scheduling conflicts for instructors
 - **Class Management**: Add, remove, and track classes with instructor and enrollment information
 - **Visual Scheduling Grid**: Clear overview of all rooms, days, and time slots
-- **Persistent Storage**: Save and load schedules using browser local storage
-- **JSON Export**: Export schedules to JSON format for backup or sharing
+- **Persistent Storage**: Data is saved to the server and persists across sessions
+- **Comprehensive Reports**: Generate detailed reports with conflict detection
+- **JSON/CSV Export**: Export schedules to JSON or CSV format for backup or sharing
+- **Docker Support**: Run in a Docker container with persistent data storage
 - **Responsive Design**: Works on desktop and tablet devices
 
 ## Getting Started
 
-### Installation
+### Option 1: Docker (Recommended)
 
-Simply open the `index.html` file in a modern web browser. No server or installation required!
+The easiest way to run the scheduler with persistent data storage:
 
 ```bash
-# Clone or download this repository
-# Then open index.html in your browser
+# Start the application
+docker-compose up -d
+
+# Access at http://localhost:3000
+
+# Stop the application
+docker-compose stop
+
+# Start again (your data is preserved)
+docker-compose start
+```
+
+Your data is automatically saved and will persist even when you stop and restart the container.
+
+📖 See [DOCKER.md](DOCKER.md) for complete Docker documentation including backup/restore instructions.
+
+### Option 2: Run with Node.js
+
+If you prefer to run without Docker:
+
+```bash
+# Install dependencies
+npm install
+
+# Start the server
+npm start
+
+# Access at http://localhost:3000
+```
+
+### Option 3: Static File (No Persistence)
+
+For quick testing without data persistence:
+
+```bash
+# Simply open index.html in your browser
 open index.html
 ```
+
+Note: This option uses browser localStorage and data won't be accessible from other devices.
 
 ## Usage
 
