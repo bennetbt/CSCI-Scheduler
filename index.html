@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Class Scheduler - College Department</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>College Class Scheduler</h1>
+            <div class="controls">
+                <button id="addClassBtn" class="btn btn-primary">Add Class</button>
+                <button id="configBtn" class="btn btn-secondary">Configure Rooms/Times</button>
+                <button id="saveBtn" class="btn btn-success">Save Schedule</button>
+                <button id="loadBtn" class="btn btn-success">Load Schedule</button>
+                <button id="exportBtn" class="btn btn-info">Export to JSON</button>
+                <button id="clearBtn" class="btn btn-danger">Clear All</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Sidebar with unassigned classes -->
+            <aside class="sidebar">
+                <h2>Unassigned Classes</h2>
+                <div id="unassignedClasses" class="class-pool">
+                    <!-- Classes will be added here dynamically -->
+                </div>
+            </aside>
+
+            <!-- Main scheduling grid -->
+            <main class="schedule-grid-container">
+                <div id="scheduleGrid" class="schedule-grid">
+                    <!-- Grid will be generated dynamically -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal for adding classes -->
+    <div id="addClassModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add New Class</h2>
+            <form id="addClassForm">
+                <div class="form-group">
+                    <label for="className">Class Name:</label>
+                    <input type="text" id="className" required placeholder="e.g., CSCI 101">
+                </div>
+                <div class="form-group">
+                    <label for="classTitle">Class Title:</label>
+                    <input type="text" id="classTitle" required placeholder="e.g., Introduction to Computer Science">
+                </div>
+                <div class="form-group">
+                    <label for="instructor">Instructor:</label>
+                    <input type="text" id="instructor" required placeholder="e.g., Dr. Smith">
+                </div>
+                <div class="form-group">
+                    <label for="enrollment">Expected Enrollment:</label>
+                    <input type="number" id="enrollment" value="30">
+                </div>
+                <div class="form-group">
+                    <label for="duration">Duration (blocks):</label>
+                    <input type="number" id="duration" value="1" min="1">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Class</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for configuration -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Configure Schedule</h2>
+            <form id="configForm">
+                <div class="form-group">
+                    <label for="rooms">Rooms (one per line):</label>
+                    <textarea id="rooms" rows="6" placeholder="Room 101&#10;Room 102&#10;Room 103"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="days">Days:</label>
+                    <textarea id="days" rows="3" placeholder="Monday&#10;Tuesday&#10;Wednesday"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="timeBlocks">Time Blocks (one per line):</label>
+                    <textarea id="timeBlocks" rows="6" placeholder="8:00 AM - 9:15 AM&#10;9:30 AM - 10:45 AM&#10;11:00 AM - 12:15 PM"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Apply Configuration</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="scheduler.js"></script>
+</body>
+</html>
