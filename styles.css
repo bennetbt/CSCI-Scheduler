@@ -527,10 +527,11 @@ header h1 {
     margin-top: 0.5rem;
 }
 
-/* Score display in class cards */
-.class-card .score {
-    font-size: 0.75rem;
-    color: #9b59b6;
-    font-weight: bold;
-    margin-top: 0.3rem;
+/* Stat warning and success states */
+.stat-warning {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%) !important;
+}
+
+.stat-success {
+    background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
 }

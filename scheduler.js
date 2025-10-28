@@ -1,13 +1,12 @@
 // Data Models
 class ClassItem {
-    constructor(id, name, title, instructor, enrollment, duration = 1, score = 0) {
+    constructor(id, name, title, instructor, enrollment, duration = 1) {
         this.id = id;
         this.name = name;
         this.title = title;
         this.instructor = instructor;
         this.enrollment = enrollment;
         this.duration = duration; // How many time blocks this class spans
-        this.score = score; // Priority/ranking score for the course
     }
 }
 
@@ -225,6 +224,51 @@ class Scheduler {
         return classId ? this.getClassById(classId) : null;
     }
 
+    checkFacultyConflict(instructor, day, timeBlock, excludeClassId = null) {
+        // Check if this instructor is already teaching at this time on this day
+        for (let slotKey in this.schedule) {
+            const [room, slotDay, slotTime] = slotKey.split('|');
+
+            // Check if it's the same day and time block
+            if (slotDay === day && slotTime === timeBlock) {
+                const classId = this.schedule[slotKey];
+
+                // Skip if this is the same class we're moving
+                if (classId === excludeClassId) continue;
+
+                const classItem = this.getClassById(classId);
+                if (classItem && classItem.instructor === instructor) {
+                    return {
+                        conflict: true,
+                        conflictingClass: classItem,
+                        conflictingRoom: room
+                    };
+                }
+            }
+        }
+        return { conflict: false };
+    }
+
+    getFacultySchedule(instructor) {
+        // Get all scheduled slots for a given instructor
+        const schedule = [];
+        for (let slotKey in this.schedule) {
+            const [room, day, timeBlock] = slotKey.split('|');
+            const classId = this.schedule[slotKey];
+            const classItem = this.getClassById(classId);
+
+            if (classItem && classItem.instructor === instructor) {
+                schedule.push({
+                    class: classItem,
+                    room,
+                    day,
+                    timeBlock
+                });
+            }
+        }
+        return schedule;
+    }
+
     renderScheduleGrid() {
         const gridContainer = document.getElementById('scheduleGrid');
         gridContainer.innerHTML = '';
@@ -355,14 +399,11 @@ class Scheduler {
         card.draggable = true;
         card.dataset.classId = classItem.id;
 
-        const scoreDisplay = classItem.score ? `<div class="score">Priority: ${classItem.score}</div>` : '';
-
         card.innerHTML = `
             <h3>${classItem.name}</h3>
             <div class="class-title">${classItem.title}</div>
             <div class="instructor">${classItem.instructor}</div>
             <div class="enrollment">${classItem.enrollment} students</div>
-            ${scoreDisplay}
             <button class="remove-btn" onclick="scheduler.removeClass(${classItem.id})">Remove</button>
         `;
 
@@ -413,6 +454,27 @@ class Scheduler {
             if (existingClass && existingClass.id !== this.draggedClassId) {
                 alert('This slot is already occupied! Please choose another slot or remove the existing class first.');
                 return;
+            }
+
+            // Check for faculty conflicts
+            const classToSchedule = this.getClassById(this.draggedClassId);
+            if (classToSchedule) {
+                const conflictCheck = this.checkFacultyConflict(
+                    classToSchedule.instructor,
+                    day,
+                    timeBlock,
+                    this.draggedClassId
+                );
+
+                if (conflictCheck.conflict) {
+                    alert(
+                        `Faculty Conflict!\n\n` +
+                        `${classToSchedule.instructor} is already teaching "${conflictCheck.conflictingClass.name}" ` +
+                        `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
+                        `Please choose a different time slot.`
+                    );
+                    return;
+                }
             }
 
             // Remove class from previous slot if it was scheduled
@@ -477,14 +539,13 @@ class Scheduler {
         const instructor = document.getElementById('instructor').value.trim();
         const enrollment = parseInt(document.getElementById('enrollment').value);
         const duration = parseInt(document.getElementById('duration').value);
-        const score = parseInt(document.getElementById('score').value) || 0;
 
         if (!name || !title || !instructor) {
             alert('Please fill in all required fields');
             return;
         }
 
-        const newClass = new ClassItem(this.nextClassId++, name, title, instructor, enrollment, duration, score);
+        const newClass = new ClassItem(this.nextClassId++, name, title, instructor, enrollment, duration);
         this.addClass(newClass);
 
         // Close modal and reset form
@@ -591,23 +652,64 @@ class Scheduler {
         });
 
         // Sort by various criteria
-        const byScore = [...this.classes].sort((a, b) => (b.score || 0) - (a.score || 0));
         const byEnrollment = [...this.classes].sort((a, b) => b.enrollment - a.enrollment);
         const byInstructor = [...this.classes].sort((a, b) => a.instructor.localeCompare(b.instructor));
         const byClassName = [...this.classes].sort((a, b) => a.name.localeCompare(b.name));
 
+        // Get faculty conflict information
+        const facultyConflicts = this.detectAllFacultyConflicts();
+
         return {
             scheduledClasses,
             unscheduledClasses,
-            byScore,
             byEnrollment,
             byInstructor,
             byClassName,
+            facultyConflicts,
             totalClasses: this.classes.length,
             totalScheduled: scheduledClasses.length,
             totalUnscheduled: unscheduledClasses.length,
             totalEnrollment: this.classes.reduce((sum, c) => sum + c.enrollment, 0)
         };
+    }
+
+    detectAllFacultyConflicts() {
+        // Detect any existing faculty conflicts in the schedule
+        const conflicts = [];
+        const checked = new Set();
+
+        for (let slotKey in this.schedule) {
+            if (checked.has(slotKey)) continue;
+
+            const [room, day, timeBlock] = slotKey.split('|');
+            const classId = this.schedule[slotKey];
+            const classItem = this.getClassById(classId);
+
+            if (!classItem) continue;
+
+            const conflictCheck = this.checkFacultyConflict(
+                classItem.instructor,
+                day,
+                timeBlock,
+                classId
+            );
+
+            if (conflictCheck.conflict) {
+                conflicts.push({
+                    instructor: classItem.instructor,
+                    day,
+                    timeBlock,
+                    class1: classItem,
+                    room1: room,
+                    class2: conflictCheck.conflictingClass,
+                    room2: conflictCheck.conflictingRoom
+                });
+            }
+
+            checked.add(slotKey);
+        }
+
+        return conflicts;
     }
 
     renderReportHTML(data) {
@@ -631,8 +733,44 @@ class Scheduler {
                         <div class="stat-label">Total Enrollment</div>
                         <div class="stat-value">${data.totalEnrollment}</div>
                     </div>
+                    <div class="stat-item ${data.facultyConflicts.length > 0 ? 'stat-warning' : 'stat-success'}">
+                        <div class="stat-label">Faculty Conflicts</div>
+                        <div class="stat-value">${data.facultyConflicts.length}</div>
+                    </div>
                 </div>
             </div>
+
+            ${data.facultyConflicts.length > 0 ? `
+            <div class="report-section">
+                <h3 style="color: #e74c3c;">⚠️ Faculty Conflicts Detected</h3>
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Instructor</th>
+                            <th>Day</th>
+                            <th>Time</th>
+                            <th>Class 1</th>
+                            <th>Room 1</th>
+                            <th>Class 2</th>
+                            <th>Room 2</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.facultyConflicts.map(conflict => `
+                            <tr style="background-color: #ffe6e6;">
+                                <td><strong>${conflict.instructor}</strong></td>
+                                <td>${conflict.day}</td>
+                                <td>${conflict.timeBlock}</td>
+                                <td>${conflict.class1.name}</td>
+                                <td>${conflict.room1}</td>
+                                <td>${conflict.class2.name}</td>
+                                <td>${conflict.room2}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            ` : ''}
 
             <div class="report-section">
                 <h3>Scheduled Classes by Location and Time</h3>
@@ -646,7 +784,6 @@ class Scheduler {
                             <th>Day</th>
                             <th>Time</th>
                             <th>Enrollment</th>
-                            <th>Score</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -659,7 +796,6 @@ class Scheduler {
                                 <td>${c.day}</td>
                                 <td>${c.timeBlock}</td>
                                 <td>${c.enrollment}</td>
-                                <td>${c.score || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -676,7 +812,6 @@ class Scheduler {
                             <th>Title</th>
                             <th>Instructor</th>
                             <th>Enrollment</th>
-                            <th>Score</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -686,39 +821,12 @@ class Scheduler {
                                 <td>${c.title}</td>
                                 <td>${c.instructor}</td>
                                 <td>${c.enrollment}</td>
-                                <td>${c.score || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
             ` : ''}
-
-            <div class="report-section">
-                <h3>Classes by Priority Score</h3>
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Course</th>
-                            <th>Title</th>
-                            <th>Instructor</th>
-                            <th>Score</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.byScore.map(c => `
-                            <tr>
-                                <td>${c.name}</td>
-                                <td>${c.title}</td>
-                                <td>${c.instructor}</td>
-                                <td>${c.score || 0}</td>
-                                <td>${this.isClassScheduled(c.id) ? 'Scheduled' : 'Unscheduled'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
 
             <div class="report-section">
                 <h3>Classes by Instructor</h3>
@@ -751,7 +859,7 @@ class Scheduler {
     }
 
     exportReportCSV(data) {
-        let csv = 'Course,Title,Instructor,Room,Day,Time,Enrollment,Score,Status\n';
+        let csv = 'Course,Title,Instructor,Room,Day,Time,Enrollment,Status\n';
 
         // Add all classes
         this.classes.forEach(c => {
@@ -767,7 +875,7 @@ class Scheduler {
                 }
             }
 
-            csv += `"${c.name}","${c.title}","${c.instructor}","${room}","${day}","${timeBlock}",${c.enrollment},${c.score || 0},${scheduled ? 'Scheduled' : 'Unscheduled'}\n`;
+            csv += `"${c.name}","${c.title}","${c.instructor}","${room}","${day}","${timeBlock}",${c.enrollment},${scheduled ? 'Scheduled' : 'Unscheduled'}\n`;
         });
 
         // Download CSV
@@ -860,7 +968,7 @@ class Scheduler {
                 }
             }
 
-            this.classes = data.classes.map(c => new ClassItem(c.id, c.name, c.title, c.instructor, c.enrollment, c.duration, c.score || 0));
+            this.classes = data.classes.map(c => new ClassItem(c.id, c.name, c.title, c.instructor, c.enrollment, c.duration));
             this.schedule = data.schedule;
             this.nextClassId = data.nextClassId;
 
