@@ -261,6 +261,11 @@ class Scheduler {
     }
 
     checkFacultyConflict(instructor, day, timeBlock, excludeClassId = null) {
+        // Skip conflict check for TBD instructors (unassigned)
+        if (!instructor || instructor === 'TBD') {
+            return { conflict: false };
+        }
+
         // Check if this instructor is already teaching at this time on this day
         for (let slotKey in this.schedule) {
             const [room, slotDay, slotTime] = slotKey.split('|');
@@ -273,7 +278,7 @@ class Scheduler {
                 if (classId === excludeClassId) continue;
 
                 const classItem = this.getClassById(classId);
-                if (classItem && classItem.instructor === instructor) {
+                if (classItem && classItem.instructor === instructor && classItem.instructor !== 'TBD') {
                     return {
                         conflict: true,
                         conflictingClass: classItem,
@@ -431,16 +436,172 @@ class Scheduler {
         div.draggable = true;
         div.dataset.classId = classItem.id;
 
+        // Find where this class is scheduled
+        let currentRoom = null, currentDay = null, currentTimeBlock = null;
+        for (let slotKey in this.schedule) {
+            if (this.schedule[slotKey] === classItem.id) {
+                [currentRoom, currentDay, currentTimeBlock] = slotKey.split('|');
+                break;
+            }
+        }
+
+        // Get all days this class is scheduled on
+        const scheduledDays = this.getScheduledDaysForClass(classItem.id);
+        const multiDayIndicator = scheduledDays.length > 1 ?
+            `<div class="multi-day-indicator" title="Scheduled on: ${scheduledDays.join(', ')}">${scheduledDays.map(d => d.charAt(0)).join('')}</div>` : '';
+
         div.innerHTML = `
+            ${multiDayIndicator}
             <h4>${classItem.name}</h4>
             <p>${classItem.instructor}</p>
             <p>${classItem.enrollment} students</p>
         `;
 
+        // Add quick-copy buttons for MW/TR patterns
+        if (currentRoom && currentDay && currentTimeBlock) {
+            const quickCopyDiv = document.createElement('div');
+            quickCopyDiv.className = 'quick-copy-buttons';
+
+            // Determine which days to show based on current day
+            const copyButtons = this.getQuickCopyDays(currentDay);
+
+            copyButtons.forEach(({ label, targetDay }) => {
+                const btn = document.createElement('button');
+                btn.textContent = label;
+                btn.className = 'quick-copy-btn';
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.copyToDay(classItem.id, currentRoom, currentDay, currentTimeBlock, targetDay);
+                };
+                quickCopyDiv.appendChild(btn);
+            });
+
+            div.appendChild(quickCopyDiv);
+        }
+
         // Make it draggable
         this.makeDraggable(div);
 
         return div;
+    }
+
+    getScheduledDaysForClass(classId) {
+        const days = new Set();
+        for (let slotKey in this.schedule) {
+            if (this.schedule[slotKey] === classId) {
+                const [room, day, timeBlock] = slotKey.split('|');
+                days.add(day);
+            }
+        }
+        return Array.from(days).sort((a, b) => {
+            const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
+            return (dayOrder[a] || 99) - (dayOrder[b] || 99);
+        });
+    }
+
+    getQuickCopyDays(currentDay) {
+        // Return appropriate copy buttons based on current day
+        const buttons = [];
+
+        switch(currentDay) {
+            case 'Monday':
+                buttons.push({ label: '→ Wed', targetDay: 'Wednesday' });
+                buttons.push({ label: '→ Fri', targetDay: 'Friday' });
+                break;
+            case 'Tuesday':
+                buttons.push({ label: '→ Thu', targetDay: 'Thursday' });
+                break;
+            case 'Wednesday':
+                buttons.push({ label: '→ Mon', targetDay: 'Monday' });
+                buttons.push({ label: '→ Fri', targetDay: 'Friday' });
+                break;
+            case 'Thursday':
+                buttons.push({ label: '→ Tue', targetDay: 'Tuesday' });
+                break;
+            case 'Friday':
+                buttons.push({ label: '→ Mon', targetDay: 'Monday' });
+                buttons.push({ label: '→ Wed', targetDay: 'Wednesday' });
+                break;
+        }
+
+        return buttons;
+    }
+
+    copyToDay(classId, sourceRoom, sourceDay, timeBlock, targetDay) {
+        const classItem = this.getClassById(classId);
+        if (!classItem) return;
+
+        // Check if the target day exists in config
+        if (!this.config.days.includes(targetDay)) {
+            alert(`${targetDay} is not in your schedule configuration.`);
+            return;
+        }
+
+        // Check if the time block exists for the target day
+        const targetTimeBlocks = this.config.getTimeBlocksForDay(targetDay);
+        if (!targetTimeBlocks.includes(timeBlock)) {
+            alert(`Time block "${timeBlock}" doesn't exist for ${targetDay}.`);
+            return;
+        }
+
+        // Ask user to confirm and choose room (same or different)
+        const sameRoom = confirm(
+            `Copy "${classItem.name}" to ${targetDay} at ${timeBlock}?\n\n` +
+            `Click OK to use the same room (${sourceRoom})\n` +
+            `Click Cancel to choose a different room`
+        );
+
+        let targetRoom = sourceRoom;
+
+        if (!sameRoom) {
+            // Show room selection
+            const roomChoice = prompt(
+                `Enter room for ${targetDay}:\n\nAvailable rooms:\n${this.config.rooms.join(', ')}`,
+                sourceRoom
+            );
+
+            if (!roomChoice) return; // User cancelled
+
+            if (!this.config.rooms.includes(roomChoice)) {
+                alert(`Room "${roomChoice}" is not in your configuration.`);
+                return;
+            }
+
+            targetRoom = roomChoice;
+        }
+
+        // Check if target slot is occupied
+        const existingClass = this.getClassInSlot(targetRoom, targetDay, timeBlock);
+        if (existingClass) {
+            const shouldOverwrite = confirm(
+                `${targetRoom} on ${targetDay} at ${timeBlock} already has "${existingClass.name}".\n\n` +
+                `Replace it with "${classItem.name}"?`
+            );
+            if (!shouldOverwrite) return;
+
+            // Remove existing class from that slot
+            this.removeClassFromSlot(targetRoom, targetDay, timeBlock);
+        }
+
+        // Check for faculty conflicts
+        const conflictCheck = this.checkFacultyConflict(classItem.instructor, targetDay, timeBlock);
+        if (conflictCheck.conflict) {
+            const shouldContinue = confirm(
+                `Faculty Conflict Warning!\n\n` +
+                `${classItem.instructor} is already teaching "${conflictCheck.conflictingClass.name}" ` +
+                `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
+                `Continue anyway?`
+            );
+            if (!shouldContinue) return;
+        }
+
+        // Schedule the class in the target slot
+        this.assignClassToSlot(classId, targetRoom, targetDay, timeBlock);
+
+        // Re-render
+        this.renderScheduleGrid();
+
+        alert(`"${classItem.name}" copied to ${targetDay} in ${targetRoom} at ${timeBlock}`);
     }
 
     renderUnassignedClasses() {
@@ -603,12 +764,12 @@ class Scheduler {
     handleAddClass() {
         const name = document.getElementById('className').value.trim();
         const title = document.getElementById('classTitle').value.trim();
-        const instructor = document.getElementById('instructor').value.trim();
+        const instructor = document.getElementById('instructor').value.trim() || 'TBD';
         const enrollment = parseInt(document.getElementById('enrollment').value);
         const duration = parseInt(document.getElementById('duration').value);
 
-        if (!name || !title || !instructor) {
-            alert('Please fill in all required fields');
+        if (!name || !title) {
+            alert('Please fill in all required fields (Class Name and Title)');
             return;
         }
 
