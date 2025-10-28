@@ -13,6 +13,7 @@ class ClassItem {
 class ScheduleConfig {
     constructor() {
         this.rooms = ['Room 101', 'Room 102', 'Room 103', 'Room 104', 'Lab A', 'Lab B'];
+        this.roomOrder = ['Room 101', 'Room 102', 'Room 103', 'Room 104', 'Lab A', 'Lab B']; // Order of columns
         this.days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         // Time blocks per day - each day can have different time blocks
         this.timeBlocksByDay = {
@@ -70,6 +71,43 @@ class ScheduleConfig {
             blocks.forEach(block => allBlocks.add(block));
         }
         return Array.from(allBlocks);
+    }
+
+    // Move a room left in the order
+    moveRoomLeft(room) {
+        const index = this.roomOrder.indexOf(room);
+        if (index > 0) {
+            [this.roomOrder[index], this.roomOrder[index - 1]] =
+            [this.roomOrder[index - 1], this.roomOrder[index]];
+            return true;
+        }
+        return false;
+    }
+
+    // Move a room right in the order
+    moveRoomRight(room) {
+        const index = this.roomOrder.indexOf(room);
+        if (index < this.roomOrder.length - 1) {
+            [this.roomOrder[index], this.roomOrder[index + 1]] =
+            [this.roomOrder[index + 1], this.roomOrder[index]];
+            return true;
+        }
+        return false;
+    }
+
+    // Update room order based on new rooms list
+    updateRoomOrder() {
+        // Keep existing order for rooms that still exist
+        const newOrder = this.roomOrder.filter(room => this.rooms.includes(room));
+
+        // Add any new rooms to the end
+        this.rooms.forEach(room => {
+            if (!newOrder.includes(room)) {
+                newOrder.push(room);
+            }
+        });
+
+        this.roomOrder = newOrder;
     }
 }
 
@@ -271,43 +309,69 @@ class Scheduler {
         const gridContainer = document.getElementById('scheduleGrid');
         gridContainer.innerHTML = '';
 
-        // Get all unique time blocks across all days (for row labels)
-        const allTimeBlocks = this.config.getAllUniqueTimeBlocks();
-
-        // Create table for each room
-        this.config.rooms.forEach(room => {
-            const roomSection = document.createElement('div');
-            roomSection.className = 'room-section';
+        // Create table for each day
+        this.config.days.forEach(day => {
+            const daySection = document.createElement('div');
+            daySection.className = 'day-section';
 
             const table = document.createElement('table');
             table.className = 'grid-table';
 
-            // Room header
-            const roomHeaderRow = document.createElement('tr');
-            const roomHeaderCell = document.createElement('th');
-            roomHeaderCell.className = 'room-header';
-            roomHeaderCell.colSpan = this.config.days.length + 1;
-            roomHeaderCell.textContent = room;
-            roomHeaderRow.appendChild(roomHeaderCell);
-            table.appendChild(roomHeaderRow);
+            // Day header
+            const dayHeaderRow = document.createElement('tr');
+            const dayHeaderCell = document.createElement('th');
+            dayHeaderCell.className = 'day-header-main';
+            dayHeaderCell.colSpan = this.config.roomOrder.length + 1;
+            dayHeaderCell.textContent = day;
+            dayHeaderRow.appendChild(dayHeaderCell);
+            table.appendChild(dayHeaderRow);
 
-            // Days header row
-            const daysHeaderRow = document.createElement('tr');
+            // Room headers row with reorder buttons
+            const roomHeaderRow = document.createElement('tr');
             const emptyCell = document.createElement('th');
             emptyCell.className = 'time-header';
-            emptyCell.textContent = 'Time Block';
-            daysHeaderRow.appendChild(emptyCell);
+            emptyCell.textContent = 'Time';
+            roomHeaderRow.appendChild(emptyCell);
 
-            this.config.days.forEach(day => {
-                const dayCell = document.createElement('th');
-                dayCell.className = 'day-header';
-                dayCell.textContent = day;
-                daysHeaderRow.appendChild(dayCell);
+            this.config.roomOrder.forEach((room, index) => {
+                const roomCell = document.createElement('th');
+                roomCell.className = 'room-header';
+
+                // Room name
+                const roomName = document.createElement('div');
+                roomName.textContent = room;
+                roomName.style.marginBottom = '0.3rem';
+                roomCell.appendChild(roomName);
+
+                // Reorder buttons
+                const buttonContainer = document.createElement('div');
+                buttonContainer.className = 'reorder-buttons';
+
+                const leftBtn = document.createElement('button');
+                leftBtn.innerHTML = '←';
+                leftBtn.className = 'reorder-btn';
+                leftBtn.title = 'Move left';
+                leftBtn.disabled = index === 0;
+                leftBtn.onclick = () => this.moveRoomColumn(room, 'left');
+
+                const rightBtn = document.createElement('button');
+                rightBtn.innerHTML = '→';
+                rightBtn.className = 'reorder-btn';
+                rightBtn.title = 'Move right';
+                rightBtn.disabled = index === this.config.roomOrder.length - 1;
+                rightBtn.onclick = () => this.moveRoomColumn(room, 'right');
+
+                buttonContainer.appendChild(leftBtn);
+                buttonContainer.appendChild(rightBtn);
+                roomCell.appendChild(buttonContainer);
+
+                roomHeaderRow.appendChild(roomCell);
             });
-            table.appendChild(daysHeaderRow);
+            table.appendChild(roomHeaderRow);
 
-            // Time blocks rows - show all unique time blocks
-            allTimeBlocks.forEach((timeBlock, index) => {
+            // Time blocks rows for this specific day
+            const timeBlocks = this.config.getTimeBlocksForDay(day);
+            timeBlocks.forEach(timeBlock => {
                 const row = document.createElement('tr');
 
                 // Time label
@@ -316,44 +380,49 @@ class Scheduler {
                 timeCell.textContent = timeBlock;
                 row.appendChild(timeCell);
 
-                // Day slots - only show slot if this time block exists for this day
-                this.config.days.forEach(day => {
-                    const dayTimeBlocks = this.config.getTimeBlocksForDay(day);
+                // Room slots (in the configured order)
+                this.config.roomOrder.forEach(room => {
+                    const slot = document.createElement('td');
+                    slot.className = 'time-slot';
+                    slot.dataset.room = room;
+                    slot.dataset.day = day;
+                    slot.dataset.timeBlock = timeBlock;
 
-                    if (dayTimeBlocks.includes(timeBlock)) {
-                        const slot = document.createElement('td');
-                        slot.className = 'time-slot';
-                        slot.dataset.room = room;
-                        slot.dataset.day = day;
-                        slot.dataset.timeBlock = timeBlock;
-
-                        // Check if there's a class scheduled
-                        const scheduledClass = this.getClassInSlot(room, day, timeBlock);
-                        if (scheduledClass) {
-                            slot.classList.add('occupied');
-                            const classDiv = this.createScheduledClassElement(scheduledClass);
-                            slot.appendChild(classDiv);
-                        }
-
-                        // Make slot a drop target
-                        this.makeDropTarget(slot);
-
-                        row.appendChild(slot);
-                    } else {
-                        // Empty cell for days that don't have this time block
-                        const emptySlot = document.createElement('td');
-                        emptySlot.className = 'time-slot disabled';
-                        emptySlot.style.backgroundColor = '#ddd';
-                        row.appendChild(emptySlot);
+                    // Check if there's a class scheduled
+                    const scheduledClass = this.getClassInSlot(room, day, timeBlock);
+                    if (scheduledClass) {
+                        slot.classList.add('occupied');
+                        const classDiv = this.createScheduledClassElement(scheduledClass);
+                        slot.appendChild(classDiv);
                     }
+
+                    // Make slot a drop target
+                    this.makeDropTarget(slot);
+
+                    row.appendChild(slot);
                 });
 
                 table.appendChild(row);
             });
 
-            roomSection.appendChild(table);
-            gridContainer.appendChild(roomSection);
+            daySection.appendChild(table);
+            gridContainer.appendChild(daySection);
         });
+    }
+
+    moveRoomColumn(room, direction) {
+        let moved = false;
+        if (direction === 'left') {
+            moved = this.config.moveRoomLeft(room);
+        } else if (direction === 'right') {
+            moved = this.config.moveRoomRight(room);
+        }
+
+        if (moved) {
+            this.renderScheduleGrid();
+            // Auto-save the new order
+            this.saveToServer();
+        }
     }
 
     createScheduledClassElement(classItem) {
@@ -591,6 +660,9 @@ class Scheduler {
         this.config.rooms = newRooms;
         this.config.days = newDays;
         this.config.timeBlocksByDay = newTimeBlocksByDay;
+
+        // Update room order to include new rooms and remove deleted ones
+        this.config.updateRoomOrder();
 
         // Close modal
         document.getElementById('configModal').style.display = 'none';
@@ -975,6 +1047,14 @@ class Scheduler {
                     this.config = new ScheduleConfig();
                     this.config.rooms = data.config.rooms || this.config.rooms;
                     this.config.days = data.config.days || this.config.days;
+
+                    // Handle roomOrder with backward compatibility
+                    if (data.config.roomOrder) {
+                        this.config.roomOrder = data.config.roomOrder;
+                    } else {
+                        // Initialize roomOrder from rooms if not present
+                        this.config.roomOrder = [...this.config.rooms];
+                    }
 
                     // Handle both old timeBlocks and new timeBlocksByDay
                     if (data.config.timeBlocksByDay) {
