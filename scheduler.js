@@ -120,6 +120,7 @@ class Scheduler {
         this.nextClassId = 1;
         this.draggedElement = null;
         this.draggedClassId = null;
+        this.editingClassId = null; // Track which class is being edited
 
         this.init();
     }
@@ -201,7 +202,13 @@ class Scheduler {
         // Modal close buttons
         document.querySelectorAll('.close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
-                e.target.closest('.modal').style.display = 'none';
+                const modal = e.target.closest('.modal');
+                modal.style.display = 'none';
+
+                // Reset edit mode if closing the add/edit class modal
+                if (modal.id === 'addClassModal') {
+                    this.resetAddClassModal();
+                }
             });
         });
 
@@ -209,6 +216,11 @@ class Scheduler {
         window.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
+
+                // Reset edit mode if closing the add/edit class modal
+                if (e.target.id === 'addClassModal') {
+                    this.resetAddClassModal();
+                }
             }
         });
     }
@@ -632,7 +644,10 @@ class Scheduler {
             <div class="class-title">${classItem.title}</div>
             <div class="instructor">${classItem.instructor}</div>
             <div class="enrollment">${classItem.enrollment} students</div>
-            <button class="remove-btn" onclick="scheduler.removeClass(${classItem.id})">Remove</button>
+            <div class="card-actions">
+                <button class="edit-btn" onclick="scheduler.editClass(${classItem.id})">Edit</button>
+                <button class="remove-btn" onclick="scheduler.removeClass(${classItem.id})">Remove</button>
+            </div>
         `;
 
         // Make it draggable
@@ -761,6 +776,43 @@ class Scheduler {
         this.showModal('configModal');
     }
 
+    resetAddClassModal() {
+        // Reset editing mode
+        this.editingClassId = null;
+
+        // Reset modal title and button text
+        document.querySelector('#addClassModal h2').textContent = 'Add New Class';
+        document.querySelector('#addClassForm button[type="submit"]').textContent = 'Add Class';
+
+        // Reset form
+        document.getElementById('addClassForm').reset();
+    }
+
+    editClass(classId) {
+        const classItem = this.getClassById(classId);
+        if (!classItem) return;
+
+        // Set editing mode
+        this.editingClassId = classId;
+
+        // Update modal title
+        document.querySelector('#addClassModal h2').textContent = 'Edit Class';
+
+        // Populate form with existing data
+        document.getElementById('className').value = classItem.name;
+        document.getElementById('classTitle').value = classItem.title;
+        document.getElementById('instructor').value = classItem.instructor === 'TBD' ? '' : classItem.instructor;
+        document.getElementById('enrollment').value = classItem.enrollment;
+        document.getElementById('duration').value = classItem.duration;
+
+        // Update button text
+        const submitBtn = document.querySelector('#addClassForm button[type="submit"]');
+        submitBtn.textContent = 'Update Class';
+
+        // Show modal
+        this.showModal('addClassModal');
+    }
+
     handleAddClass() {
         const name = document.getElementById('className').value.trim();
         const title = document.getElementById('classTitle').value.trim();
@@ -773,15 +825,29 @@ class Scheduler {
             return;
         }
 
-        const newClass = new ClassItem(this.nextClassId++, name, title, instructor, enrollment, duration);
-        this.addClass(newClass);
+        if (this.editingClassId !== null) {
+            // Edit mode - update existing class
+            const classItem = this.getClassById(this.editingClassId);
+            if (classItem) {
+                classItem.name = name;
+                classItem.title = title;
+                classItem.instructor = instructor;
+                classItem.enrollment = enrollment;
+                classItem.duration = duration;
+            }
+        } else {
+            // Add mode - create new class
+            const newClass = new ClassItem(this.nextClassId++, name, title, instructor, enrollment, duration);
+            this.addClass(newClass);
+        }
 
-        // Close modal and reset form
+        // Close modal and reset
         document.getElementById('addClassModal').style.display = 'none';
-        document.getElementById('addClassForm').reset();
+        this.resetAddClassModal();
 
-        // Re-render
+        // Re-render both unassigned classes and the schedule grid (in case class is scheduled)
         this.renderUnassignedClasses();
+        this.renderScheduleGrid();
     }
 
     handleConfigUpdate() {

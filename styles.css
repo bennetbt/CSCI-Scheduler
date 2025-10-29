@@ -171,6 +171,28 @@ header h1 {
     margin-top: 0.3rem;
 }
 
+.class-card .card-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    justify-content: flex-end;
+}
+
+.class-card .edit-btn {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.class-card .edit-btn:hover {
+    background-color: #2980b9;
+}
+
 .class-card .remove-btn {
     background-color: #e74c3c;
     color: white;
@@ -179,8 +201,7 @@ header h1 {
     padding: 0.2rem 0.5rem;
     font-size: 0.7rem;
     cursor: pointer;
-    margin-top: 0.5rem;
-    float: right;
+    transition: background-color 0.2s ease;
 }
 
 .class-card .remove-btn:hover {
