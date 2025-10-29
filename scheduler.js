@@ -1,12 +1,24 @@
 // Data Models
-class ClassItem {
-    constructor(id, name, title, instructor, enrollment, duration = 1) {
+class Course {
+    constructor(id, code, title) {
         this.id = id;
-        this.name = name;
-        this.title = title;
+        this.code = code; // e.g., "CSCI 101"
+        this.title = title; // e.g., "Intro to Computer Science"
+    }
+}
+
+class Section {
+    constructor(id, courseId, sectionNumber, instructor, enrollment, duration = 1) {
+        this.id = id;
+        this.courseId = courseId;
+        this.sectionNumber = sectionNumber; // e.g., "001"
         this.instructor = instructor;
-        this.enrollment = enrollment;
-        this.duration = duration; // How many time blocks this class spans
+        this.enrollment = enrollment; // Set based on room capacity
+        this.duration = duration; // How many time blocks this section spans
+    }
+
+    getDisplayName(courseCode) {
+        return `${courseCode}-${this.sectionNumber}`;
     }
 }
 
@@ -14,6 +26,14 @@ class ScheduleConfig {
     constructor() {
         this.rooms = ['Room 101', 'Room 102', 'Room 103', 'Room 104', 'Lab A', 'Lab B'];
         this.roomOrder = ['Room 101', 'Room 102', 'Room 103', 'Room 104', 'Lab A', 'Lab B']; // Order of columns
+        this.roomCapacities = {
+            'Room 101': 30,
+            'Room 102': 30,
+            'Room 103': 35,
+            'Room 104': 35,
+            'Lab A': 25,
+            'Lab B': 25
+        };
         this.days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         // Time blocks per day - each day can have different time blocks
         this.timeBlocksByDay = {
@@ -73,6 +93,14 @@ class ScheduleConfig {
         return Array.from(allBlocks);
     }
 
+    getRoomCapacity(room) {
+        return this.roomCapacities[room] || 30; // Default to 30
+    }
+
+    setRoomCapacity(room, capacity) {
+        this.roomCapacities[room] = capacity;
+    }
+
     // Move a room left in the order
     moveRoomLeft(room) {
         const index = this.roomOrder.indexOf(room);
@@ -100,10 +128,14 @@ class ScheduleConfig {
         // Keep existing order for rooms that still exist
         const newOrder = this.roomOrder.filter(room => this.rooms.includes(room));
 
-        // Add any new rooms to the end
+        // Add any new rooms to the end and initialize capacities
         this.rooms.forEach(room => {
             if (!newOrder.includes(room)) {
                 newOrder.push(room);
+            }
+            // Initialize capacity for new rooms if not set
+            if (!this.roomCapacities[room]) {
+                this.roomCapacities[room] = 30; // Default capacity
             }
         });
 
@@ -115,38 +147,41 @@ class ScheduleConfig {
 class Scheduler {
     constructor() {
         this.config = new ScheduleConfig();
-        this.classes = [];
-        this.schedule = {}; // Map of slot IDs to class IDs
-        this.nextClassId = 1;
+        this.courses = []; // Course catalog
+        this.sections = []; // Scheduled sections
+        this.schedule = {}; // Map of slot IDs to section IDs
+        this.nextCourseId = 1;
+        this.nextSectionId = 1;
         this.draggedElement = null;
-        this.draggedClassId = null;
-        this.editingClassId = null; // Track which class is being edited
+        this.draggedCourseId = null; // For dragging from catalog
+        this.draggedSectionId = null; // For dragging scheduled sections
+        this.editingCourseId = null; // Track which course is being edited
 
         this.init();
     }
 
     init() {
-        // Add some sample classes
-        this.addSampleClasses();
+        // Add some sample courses to catalog
+        this.addSampleCourses();
 
         // Setup event listeners
         this.setupEventListeners();
 
         // Render the UI
         this.renderScheduleGrid();
-        this.renderUnassignedClasses();
+        this.renderCourseCatalog();
 
         // Load saved data from server
         this.loadFromServer();
     }
 
-    addSampleClasses() {
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 101', 'Intro to Computer Science', 'Dr. Smith', 35));
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 201', 'Data Structures', 'Dr. Johnson', 30));
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 301', 'Algorithms', 'Prof. Williams', 25));
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 350', 'Operating Systems', 'Dr. Brown', 28));
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 401', 'Software Engineering', 'Prof. Davis', 32));
-        this.addClass(new ClassItem(this.nextClassId++, 'CSCI 450', 'Database Systems', 'Dr. Miller', 30));
+    addSampleCourses() {
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 101', 'Intro to Computer Science'));
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 201', 'Data Structures'));
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 301', 'Algorithms'));
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 350', 'Operating Systems'));
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 401', 'Software Engineering'));
+        this.addCourse(new Course(this.nextCourseId++, 'CSCI 450', 'Database Systems'));
     }
 
     setupEventListeners() {
@@ -192,10 +227,10 @@ class Scheduler {
             }
         });
 
-        // Add class form
+        // Add course form
         document.getElementById('addClassForm').addEventListener('submit', (e) => {
             e.preventDefault();
-            this.handleAddClass();
+            this.handleAddCourse();
         });
 
         // Bulk import form
@@ -216,9 +251,13 @@ class Scheduler {
                 const modal = e.target.closest('.modal');
                 modal.style.display = 'none';
 
-                // Reset edit mode if closing the add/edit class modal
+                // Reset edit mode if closing the add/edit course modal
                 if (modal.id === 'addClassModal') {
-                    this.resetAddClassModal();
+                    this.resetAddCourseModal();
+                    // Show hidden fields again
+                    document.getElementById('instructor').parentElement.style.display = '';
+                    document.getElementById('enrollment').parentElement.style.display = '';
+                    document.getElementById('duration').parentElement.style.display = '';
                 }
             });
         });
@@ -228,62 +267,91 @@ class Scheduler {
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
 
-                // Reset edit mode if closing the add/edit class modal
+                // Reset edit mode if closing the add/edit course modal
                 if (e.target.id === 'addClassModal') {
-                    this.resetAddClassModal();
+                    this.resetAddCourseModal();
+                    // Show hidden fields again
+                    document.getElementById('instructor').parentElement.style.display = '';
+                    document.getElementById('enrollment').parentElement.style.display = '';
+                    document.getElementById('duration').parentElement.style.display = '';
                 }
             }
         });
     }
 
-    addClass(classItem) {
-        this.classes.push(classItem);
+    // Course management
+    addCourse(course) {
+        this.courses.push(course);
     }
 
-    removeClass(classId) {
-        // Remove from classes array
-        this.classes = this.classes.filter(c => c.id !== classId);
+    removeCourse(courseId) {
+        // Remove course from catalog
+        this.courses = this.courses.filter(c => c.id !== courseId);
+
+        // Remove all sections of this course
+        const sectionsToRemove = this.sections.filter(s => s.courseId === courseId);
+        sectionsToRemove.forEach(section => {
+            this.removeSection(section.id);
+        });
+
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+    }
+
+    getCourseById(courseId) {
+        return this.courses.find(c => c.id === courseId);
+    }
+
+    // Section management
+    addSection(section) {
+        this.sections.push(section);
+    }
+
+    removeSection(sectionId) {
+        // Remove section from sections array
+        this.sections = this.sections.filter(s => s.id !== sectionId);
 
         // Remove from schedule
         for (let slotId in this.schedule) {
-            if (this.schedule[slotId] === classId) {
+            if (this.schedule[slotId] === sectionId) {
                 delete this.schedule[slotId];
             }
         }
-
-        this.renderScheduleGrid();
-        this.renderUnassignedClasses();
     }
 
-    getClassById(classId) {
-        return this.classes.find(c => c.id === classId);
+    getSectionById(sectionId) {
+        return this.sections.find(s => s.id === sectionId);
     }
 
-    isClassScheduled(classId) {
-        return Object.values(this.schedule).includes(classId);
+    isSectionScheduled(sectionId) {
+        return Object.values(this.schedule).includes(sectionId);
+    }
+
+    getSectionsForCourse(courseId) {
+        return this.sections.filter(s => s.courseId === courseId);
     }
 
     getSlotKey(room, day, timeBlock) {
         return `${room}|${day}|${timeBlock}`;
     }
 
-    assignClassToSlot(classId, room, day, timeBlock) {
+    assignSectionToSlot(sectionId, room, day, timeBlock) {
         const slotKey = this.getSlotKey(room, day, timeBlock);
-        this.schedule[slotKey] = classId;
+        this.schedule[slotKey] = sectionId;
     }
 
-    removeClassFromSlot(room, day, timeBlock) {
+    removeSectionFromSlot(room, day, timeBlock) {
         const slotKey = this.getSlotKey(room, day, timeBlock);
         delete this.schedule[slotKey];
     }
 
-    getClassInSlot(room, day, timeBlock) {
+    getSectionInSlot(room, day, timeBlock) {
         const slotKey = this.getSlotKey(room, day, timeBlock);
-        const classId = this.schedule[slotKey];
-        return classId ? this.getClassById(classId) : null;
+        const sectionId = this.schedule[slotKey];
+        return sectionId ? this.getSectionById(sectionId) : null;
     }
 
-    checkFacultyConflict(instructor, day, timeBlock, excludeClassId = null) {
+    checkFacultyConflict(instructor, day, timeBlock, excludeSectionId = null) {
         // Skip conflict check for TBD instructors (unassigned)
         if (!instructor || instructor === 'TBD') {
             return { conflict: false };
@@ -295,16 +363,18 @@ class Scheduler {
 
             // Check if it's the same day and time block
             if (slotDay === day && slotTime === timeBlock) {
-                const classId = this.schedule[slotKey];
+                const sectionId = this.schedule[slotKey];
 
-                // Skip if this is the same class we're moving
-                if (classId === excludeClassId) continue;
+                // Skip if this is the same section we're moving
+                if (sectionId === excludeSectionId) continue;
 
-                const classItem = this.getClassById(classId);
-                if (classItem && classItem.instructor === instructor && classItem.instructor !== 'TBD') {
+                const section = this.getSectionById(sectionId);
+                if (section && section.instructor === instructor && section.instructor !== 'TBD') {
+                    const course = this.getCourseById(section.courseId);
                     return {
                         conflict: true,
-                        conflictingClass: classItem,
+                        conflictingSection: section,
+                        conflictingCourse: course,
                         conflictingRoom: room
                     };
                 }
@@ -318,12 +388,14 @@ class Scheduler {
         const schedule = [];
         for (let slotKey in this.schedule) {
             const [room, day, timeBlock] = slotKey.split('|');
-            const classId = this.schedule[slotKey];
-            const classItem = this.getClassById(classId);
+            const sectionId = this.schedule[slotKey];
+            const section = this.getSectionById(sectionId);
 
-            if (classItem && classItem.instructor === instructor) {
+            if (section && section.instructor === instructor) {
+                const course = this.getCourseById(section.courseId);
                 schedule.push({
-                    class: classItem,
+                    section,
+                    course,
                     room,
                     day,
                     timeBlock
@@ -416,12 +488,12 @@ class Scheduler {
                     slot.dataset.day = day;
                     slot.dataset.timeBlock = timeBlock;
 
-                    // Check if there's a class scheduled
-                    const scheduledClass = this.getClassInSlot(room, day, timeBlock);
-                    if (scheduledClass) {
+                    // Check if there's a section scheduled
+                    const scheduledSection = this.getSectionInSlot(room, day, timeBlock);
+                    if (scheduledSection) {
                         slot.classList.add('occupied');
-                        const classDiv = this.createScheduledClassElement(scheduledClass);
-                        slot.appendChild(classDiv);
+                        const sectionDiv = this.createScheduledSectionElement(scheduledSection, room, day, timeBlock);
+                        slot.appendChild(sectionDiv);
                     }
 
                     // Make slot a drop target
@@ -453,31 +525,27 @@ class Scheduler {
         }
     }
 
-    createScheduledClassElement(classItem) {
+    createScheduledSectionElement(section, currentRoom, currentDay, currentTimeBlock) {
+        const course = this.getCourseById(section.courseId);
+        if (!course) return document.createElement('div');
+
         const div = document.createElement('div');
         div.className = 'slot-class';
         div.draggable = true;
-        div.dataset.classId = classItem.id;
+        div.dataset.sectionId = section.id;
 
-        // Find where this class is scheduled
-        let currentRoom = null, currentDay = null, currentTimeBlock = null;
-        for (let slotKey in this.schedule) {
-            if (this.schedule[slotKey] === classItem.id) {
-                [currentRoom, currentDay, currentTimeBlock] = slotKey.split('|');
-                break;
-            }
-        }
-
-        // Get all days this class is scheduled on
-        const scheduledDays = this.getScheduledDaysForClass(classItem.id);
+        // Get all days this section is scheduled on
+        const scheduledDays = this.getScheduledDaysForSection(section.id);
         const multiDayIndicator = scheduledDays.length > 1 ?
             `<div class="multi-day-indicator" title="Scheduled on: ${scheduledDays.join(', ')}">${scheduledDays.map(d => d.charAt(0)).join('')}</div>` : '';
 
+        const displayName = section.getDisplayName(course.code);
+
         div.innerHTML = `
             ${multiDayIndicator}
-            <h4>${classItem.name}</h4>
-            <p>${classItem.instructor}</p>
-            <p>${classItem.enrollment} students</p>
+            <h4>${displayName}</h4>
+            <p>${section.instructor}</p>
+            <p>${section.enrollment} students</p>
         `;
 
         // Add action buttons container
@@ -490,7 +558,7 @@ class Scheduler {
         editBtn.className = 'slot-edit-btn';
         editBtn.onclick = (e) => {
             e.stopPropagation();
-            this.editClass(classItem.id);
+            this.editSection(section.id);
         };
         actionsDiv.appendChild(editBtn);
 
@@ -500,12 +568,9 @@ class Scheduler {
         removeBtn.className = 'slot-remove-btn';
         removeBtn.onclick = (e) => {
             e.stopPropagation();
-            if (currentRoom && currentDay && currentTimeBlock) {
-                if (confirm(`Remove "${classItem.name}" from ${currentDay} at ${currentTimeBlock}?`)) {
-                    this.removeClassFromSlot(currentRoom, currentDay, currentTimeBlock);
-                    this.renderScheduleGrid();
-                    this.renderUnassignedClasses();
-                }
+            if (confirm(`Remove "${displayName}" from ${currentDay} at ${currentTimeBlock}?`)) {
+                this.removeSectionFromSlot(currentRoom, currentDay, currentTimeBlock);
+                this.renderScheduleGrid();
             }
         };
         actionsDiv.appendChild(removeBtn);
@@ -513,37 +578,35 @@ class Scheduler {
         div.appendChild(actionsDiv);
 
         // Add quick-copy buttons for MW/TR patterns
-        if (currentRoom && currentDay && currentTimeBlock) {
-            const quickCopyDiv = document.createElement('div');
-            quickCopyDiv.className = 'quick-copy-buttons';
+        const quickCopyDiv = document.createElement('div');
+        quickCopyDiv.className = 'quick-copy-buttons';
 
-            // Determine which days to show based on current day
-            const copyButtons = this.getQuickCopyDays(currentDay);
+        // Determine which days to show based on current day
+        const copyButtons = this.getQuickCopyDays(currentDay);
 
-            copyButtons.forEach(({ label, targetDay }) => {
-                const btn = document.createElement('button');
-                btn.textContent = label;
-                btn.className = 'quick-copy-btn';
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    this.copyToDay(classItem.id, currentRoom, currentDay, currentTimeBlock, targetDay);
-                };
-                quickCopyDiv.appendChild(btn);
-            });
+        copyButtons.forEach(({ label, targetDay }) => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            btn.className = 'quick-copy-btn';
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                this.copySectionToDay(section.id, currentRoom, currentDay, currentTimeBlock, targetDay);
+            };
+            quickCopyDiv.appendChild(btn);
+        });
 
-            div.appendChild(quickCopyDiv);
-        }
+        div.appendChild(quickCopyDiv);
 
         // Make it draggable
-        this.makeDraggable(div);
+        this.makeDraggableSection(div);
 
         return div;
     }
 
-    getScheduledDaysForClass(classId) {
+    getScheduledDaysForSection(sectionId) {
         const days = new Set();
         for (let slotKey in this.schedule) {
-            if (this.schedule[slotKey] === classId) {
+            if (this.schedule[slotKey] === sectionId) {
                 const [room, day, timeBlock] = slotKey.split('|');
                 days.add(day);
             }
@@ -582,9 +645,14 @@ class Scheduler {
         return buttons;
     }
 
-    copyToDay(classId, sourceRoom, sourceDay, timeBlock, targetDay) {
-        const classItem = this.getClassById(classId);
-        if (!classItem) return;
+    copySectionToDay(sectionId, sourceRoom, sourceDay, timeBlock, targetDay) {
+        const section = this.getSectionById(sectionId);
+        if (!section) return;
+
+        const course = this.getCourseById(section.courseId);
+        if (!course) return;
+
+        const displayName = section.getDisplayName(course.code);
 
         // Check if the target day exists in config
         if (!this.config.days.includes(targetDay)) {
@@ -601,7 +669,7 @@ class Scheduler {
 
         // Ask user to confirm and choose room (same or different)
         const sameRoom = confirm(
-            `Copy "${classItem.name}" to ${targetDay} at ${timeBlock}?\n\n` +
+            `Copy "${displayName}" to ${targetDay} at ${timeBlock}?\n\n` +
             `Click OK to use the same room (${sourceRoom})\n` +
             `Click Cancel to choose a different room`
         );
@@ -626,83 +694,108 @@ class Scheduler {
         }
 
         // Check if target slot is occupied
-        const existingClass = this.getClassInSlot(targetRoom, targetDay, timeBlock);
-        if (existingClass) {
+        const existingSection = this.getSectionInSlot(targetRoom, targetDay, timeBlock);
+        if (existingSection) {
+            const existingCourse = this.getCourseById(existingSection.courseId);
+            const existingDisplayName = existingSection.getDisplayName(existingCourse.code);
+
             const shouldOverwrite = confirm(
-                `${targetRoom} on ${targetDay} at ${timeBlock} already has "${existingClass.name}".\n\n` +
-                `Replace it with "${classItem.name}"?`
+                `${targetRoom} on ${targetDay} at ${timeBlock} already has "${existingDisplayName}".\n\n` +
+                `Replace it with "${displayName}"?`
             );
             if (!shouldOverwrite) return;
 
-            // Remove existing class from that slot
-            this.removeClassFromSlot(targetRoom, targetDay, timeBlock);
+            // Remove existing section from that slot
+            this.removeSectionFromSlot(targetRoom, targetDay, timeBlock);
         }
 
         // Check for faculty conflicts
-        const conflictCheck = this.checkFacultyConflict(classItem.instructor, targetDay, timeBlock);
+        const conflictCheck = this.checkFacultyConflict(section.instructor, targetDay, timeBlock);
         if (conflictCheck.conflict) {
+            const conflictCourse = conflictCheck.conflictingCourse;
+            const conflictSection = conflictCheck.conflictingSection;
+            const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
+
             const shouldContinue = confirm(
                 `Faculty Conflict Warning!\n\n` +
-                `${classItem.instructor} is already teaching "${conflictCheck.conflictingClass.name}" ` +
+                `${section.instructor} is already teaching "${conflictDisplayName}" ` +
                 `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
                 `Continue anyway?`
             );
             if (!shouldContinue) return;
         }
 
-        // Schedule the class in the target slot
-        this.assignClassToSlot(classId, targetRoom, targetDay, timeBlock);
+        // Schedule the section in the target slot
+        this.assignSectionToSlot(sectionId, targetRoom, targetDay, timeBlock);
 
         // Re-render
         this.renderScheduleGrid();
 
-        alert(`"${classItem.name}" copied to ${targetDay} in ${targetRoom} at ${timeBlock}`);
+        alert(`"${displayName}" copied to ${targetDay} in ${targetRoom} at ${timeBlock}`);
     }
 
-    renderUnassignedClasses() {
+    renderCourseCatalog() {
         const container = document.getElementById('unassignedClasses');
         container.innerHTML = '';
 
-        const unassignedClasses = this.classes.filter(c => !this.isClassScheduled(c.id));
-
-        if (unassignedClasses.length === 0) {
-            container.innerHTML = '<p class="empty-state">All classes are scheduled!</p>';
+        if (this.courses.length === 0) {
+            container.innerHTML = '<p class="empty-state">No courses in catalog. Add courses to get started!</p>';
             return;
         }
 
-        unassignedClasses.forEach(classItem => {
-            const card = this.createClassCard(classItem);
+        this.courses.forEach(course => {
+            const card = this.createCourseCard(course);
             container.appendChild(card);
         });
     }
 
-    createClassCard(classItem) {
+    createCourseCard(course) {
         const card = document.createElement('div');
         card.className = 'class-card';
         card.draggable = true;
-        card.dataset.classId = classItem.id;
+        card.dataset.courseId = course.id;
+
+        // Count sections for this course
+        const sections = this.getSectionsForCourse(course.id);
+        const sectionCount = sections.length;
 
         card.innerHTML = `
-            <h3>${classItem.name}</h3>
-            <div class="class-title">${classItem.title}</div>
-            <div class="instructor">${classItem.instructor}</div>
-            <div class="enrollment">${classItem.enrollment} students</div>
+            <h3>${course.code}</h3>
+            <div class="class-title">${course.title}</div>
+            <div class="enrollment">${sectionCount} section${sectionCount !== 1 ? 's' : ''}</div>
             <div class="card-actions">
-                <button class="edit-btn" onclick="scheduler.editClass(${classItem.id})">Edit</button>
-                <button class="remove-btn" onclick="scheduler.removeClass(${classItem.id})">Remove</button>
+                <button class="edit-btn" onclick="scheduler.editCourse(${course.id})">Edit</button>
+                <button class="remove-btn" onclick="scheduler.removeCourse(${course.id})">Remove</button>
             </div>
         `;
 
         // Make it draggable
-        this.makeDraggable(card);
+        this.makeDraggableCourse(card);
 
         return card;
     }
 
-    makeDraggable(element) {
+    makeDraggableCourse(element) {
         element.addEventListener('dragstart', (e) => {
             this.draggedElement = element;
-            this.draggedClassId = parseInt(element.dataset.classId);
+            this.draggedCourseId = parseInt(element.dataset.courseId);
+            this.draggedSectionId = null; // Not dragging a section
+            element.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'copy'; // Use copy since we're creating a new section
+            e.dataTransfer.setData('text/html', element.innerHTML);
+        });
+
+        element.addEventListener('dragend', (e) => {
+            element.classList.remove('dragging');
+            this.draggedElement = null;
+        });
+    }
+
+    makeDraggableSection(element) {
+        element.addEventListener('dragstart', (e) => {
+            this.draggedElement = element;
+            this.draggedSectionId = parseInt(element.dataset.sectionId);
+            this.draggedCourseId = null; // Not dragging a course
             element.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/html', element.innerHTML);
@@ -717,7 +810,7 @@ class Scheduler {
     makeDropTarget(slot) {
         slot.addEventListener('dragover', (e) => {
             e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
+            e.dataTransfer.dropEffect = this.draggedCourseId ? 'copy' : 'move';
             slot.classList.add('drag-over');
         });
 
@@ -729,60 +822,182 @@ class Scheduler {
             e.preventDefault();
             slot.classList.remove('drag-over');
 
-            if (!this.draggedClassId) return;
-
             const room = slot.dataset.room;
             const day = slot.dataset.day;
             const timeBlock = slot.dataset.timeBlock;
 
-            // Check if slot is already occupied
-            const existingClass = this.getClassInSlot(room, day, timeBlock);
-            if (existingClass && existingClass.id !== this.draggedClassId) {
-                alert('This slot is already occupied! Please choose another slot or remove the existing class first.');
-                return;
+            if (this.draggedCourseId) {
+                // Dragging a course from catalog - create new section
+                this.showCreateSectionDialog(this.draggedCourseId, room, day, timeBlock);
+                this.draggedCourseId = null;
+            } else if (this.draggedSectionId) {
+                // Dragging an existing section - move it
+                this.moveSection(this.draggedSectionId, room, day, timeBlock);
+                this.draggedSectionId = null;
             }
-
-            // Check for faculty conflicts
-            const classToSchedule = this.getClassById(this.draggedClassId);
-            if (classToSchedule) {
-                const conflictCheck = this.checkFacultyConflict(
-                    classToSchedule.instructor,
-                    day,
-                    timeBlock,
-                    this.draggedClassId
-                );
-
-                if (conflictCheck.conflict) {
-                    alert(
-                        `Faculty Conflict!\n\n` +
-                        `${classToSchedule.instructor} is already teaching "${conflictCheck.conflictingClass.name}" ` +
-                        `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
-                        `Please choose a different time slot.`
-                    );
-                    return;
-                }
-            }
-
-            // Remove class from previous slot if it was scheduled
-            for (let slotId in this.schedule) {
-                if (this.schedule[slotId] === this.draggedClassId) {
-                    delete this.schedule[slotId];
-                }
-            }
-
-            // Assign to new slot
-            this.assignClassToSlot(this.draggedClassId, room, day, timeBlock);
-
-            // Re-render
-            this.renderScheduleGrid();
-            this.renderUnassignedClasses();
-
-            this.draggedClassId = null;
         });
     }
 
     showModal(modalId) {
         document.getElementById(modalId).style.display = 'block';
+    }
+
+    showCreateSectionDialog(courseId, room, day, timeBlock) {
+        const course = this.getCourseById(courseId);
+        if (!course) return;
+
+        const roomCapacity = this.config.getRoomCapacity(room);
+
+        // Prompt for section number
+        const sectionNumber = prompt(
+            `Creating section for ${course.code} - ${course.title}\n\n` +
+            `Room: ${room} (Capacity: ${roomCapacity})\n` +
+            `Day: ${day}\n` +
+            `Time: ${timeBlock}\n\n` +
+            `Enter section number:`,
+            '001'
+        );
+
+        if (!sectionNumber) return; // User cancelled
+
+        // Prompt for instructor
+        const instructor = prompt(
+            `Enter instructor name:\n(Leave blank for TBD)`,
+            ''
+        );
+
+        const instructorName = instructor ? instructor.trim() : 'TBD';
+
+        // Check if section already exists with same number
+        const existingSections = this.getSectionsForCourse(courseId);
+        const duplicate = existingSections.find(s => s.sectionNumber === sectionNumber);
+        if (duplicate) {
+            const shouldContinue = confirm(
+                `A section ${course.code}-${sectionNumber} already exists.\n\n` +
+                `Create another section with the same number?`
+            );
+            if (!shouldContinue) return;
+        }
+
+        // Check if slot is occupied
+        const existingSection = this.getSectionInSlot(room, day, timeBlock);
+        if (existingSection) {
+            const existingCourse = this.getCourseById(existingSection.courseId);
+            const existingDisplayName = existingSection.getDisplayName(existingCourse.code);
+
+            const shouldOverwrite = confirm(
+                `${room} on ${day} at ${timeBlock} already has "${existingDisplayName}".\n\n` +
+                `Replace it?`
+            );
+            if (!shouldOverwrite) return;
+
+            // Remove existing section from that slot
+            this.removeSectionFromSlot(room, day, timeBlock);
+        }
+
+        // Check for faculty conflicts
+        if (instructorName !== 'TBD') {
+            const conflictCheck = this.checkFacultyConflict(instructorName, day, timeBlock);
+            if (conflictCheck.conflict) {
+                const conflictCourse = conflictCheck.conflictingCourse;
+                const conflictSection = conflictCheck.conflictingSection;
+                const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
+
+                const shouldContinue = confirm(
+                    `Faculty Conflict Warning!\n\n` +
+                    `${instructorName} is already teaching "${conflictDisplayName}" ` +
+                    `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
+                    `Continue anyway?`
+                );
+                if (!shouldContinue) return;
+            }
+        }
+
+        // Create the section
+        const newSection = new Section(
+            this.nextSectionId++,
+            courseId,
+            sectionNumber,
+            instructorName,
+            roomCapacity, // Use room capacity as enrollment
+            1 // Default duration
+        );
+
+        this.addSection(newSection);
+        this.assignSectionToSlot(newSection.id, room, day, timeBlock);
+
+        // Re-render
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+    }
+
+    moveSection(sectionId, targetRoom, targetDay, targetTimeBlock) {
+        const section = this.getSectionById(sectionId);
+        if (!section) return;
+
+        const course = this.getCourseById(section.courseId);
+        if (!course) return;
+
+        const displayName = section.getDisplayName(course.code);
+
+        // Find the source location
+        let sourceRoom = null, sourceDay = null, sourceTimeBlock = null;
+        for (let slotKey in this.schedule) {
+            if (this.schedule[slotKey] === sectionId) {
+                [sourceRoom, sourceDay, sourceTimeBlock] = slotKey.split('|');
+                break;
+            }
+        }
+
+        // Check if target slot is occupied
+        const existingSection = this.getSectionInSlot(targetRoom, targetDay, targetTimeBlock);
+        if (existingSection && existingSection.id !== sectionId) {
+            const existingCourse = this.getCourseById(existingSection.courseId);
+            const existingDisplayName = existingSection.getDisplayName(existingCourse.code);
+
+            alert(
+                `This slot is already occupied by "${existingDisplayName}"!\n\n` +
+                `Please choose another slot or remove the existing section first.`
+            );
+            return;
+        }
+
+        // Check for faculty conflicts
+        const conflictCheck = this.checkFacultyConflict(
+            section.instructor,
+            targetDay,
+            targetTimeBlock,
+            sectionId
+        );
+
+        if (conflictCheck.conflict) {
+            const conflictCourse = conflictCheck.conflictingCourse;
+            const conflictSection = conflictCheck.conflictingSection;
+            const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
+
+            alert(
+                `Faculty Conflict!\n\n` +
+                `${section.instructor} is already teaching "${conflictDisplayName}" ` +
+                `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
+                `Please choose a different time slot.`
+            );
+            return;
+        }
+
+        // Update enrollment if room changed
+        const roomCapacity = this.config.getRoomCapacity(targetRoom);
+        section.enrollment = roomCapacity;
+
+        // Remove from previous slot
+        if (sourceRoom && sourceDay && sourceTimeBlock) {
+            this.removeSectionFromSlot(sourceRoom, sourceDay, sourceTimeBlock);
+        }
+
+        // Assign to new slot
+        this.assignSectionToSlot(sectionId, targetRoom, targetDay, targetTimeBlock);
+
+        // Re-render
+        this.renderScheduleGrid();
     }
 
     showConfigModal() {
@@ -819,77 +1034,130 @@ class Scheduler {
         this.showModal('configModal');
     }
 
-    resetAddClassModal() {
+    resetAddCourseModal() {
         // Reset editing mode
-        this.editingClassId = null;
+        this.editingCourseId = null;
 
         // Reset modal title and button text
-        document.querySelector('#addClassModal h2').textContent = 'Add New Class';
-        document.querySelector('#addClassForm button[type="submit"]').textContent = 'Add Class';
+        document.querySelector('#addClassModal h2').textContent = 'Add New Course';
+        document.querySelector('#addClassForm button[type="submit"]').textContent = 'Add Course';
 
         // Reset form
         document.getElementById('addClassForm').reset();
     }
 
-    editClass(classId) {
-        const classItem = this.getClassById(classId);
-        if (!classItem) return;
+    editCourse(courseId) {
+        const course = this.getCourseById(courseId);
+        if (!course) return;
 
         // Set editing mode
-        this.editingClassId = classId;
+        this.editingCourseId = courseId;
 
         // Update modal title
-        document.querySelector('#addClassModal h2').textContent = 'Edit Class';
+        document.querySelector('#addClassModal h2').textContent = 'Edit Course';
 
         // Populate form with existing data
-        document.getElementById('className').value = classItem.name;
-        document.getElementById('classTitle').value = classItem.title;
-        document.getElementById('instructor').value = classItem.instructor === 'TBD' ? '' : classItem.instructor;
-        document.getElementById('enrollment').value = classItem.enrollment;
-        document.getElementById('duration').value = classItem.duration;
+        document.getElementById('className').value = course.code;
+        document.getElementById('classTitle').value = course.title;
+
+        // Hide instructor and enrollment fields for course editing
+        document.getElementById('instructor').parentElement.style.display = 'none';
+        document.getElementById('enrollment').parentElement.style.display = 'none';
+        document.getElementById('duration').parentElement.style.display = 'none';
 
         // Update button text
         const submitBtn = document.querySelector('#addClassForm button[type="submit"]');
-        submitBtn.textContent = 'Update Class';
+        submitBtn.textContent = 'Update Course';
 
         // Show modal
         this.showModal('addClassModal');
     }
 
-    handleAddClass() {
-        const name = document.getElementById('className').value.trim();
-        const title = document.getElementById('classTitle').value.trim();
-        const instructor = document.getElementById('instructor').value.trim() || 'TBD';
-        const enrollment = parseInt(document.getElementById('enrollment').value);
-        const duration = parseInt(document.getElementById('duration').value);
+    editSection(sectionId) {
+        const section = this.getSectionById(sectionId);
+        if (!section) return;
 
-        if (!name || !title) {
-            alert('Please fill in all required fields (Class Name and Title)');
+        const course = this.getCourseById(section.courseId);
+        if (!course) return;
+
+        const instructor = prompt(
+            `Edit Section ${section.getDisplayName(course.code)}\n\n` +
+            `Current instructor: ${section.instructor}\n\n` +
+            `Enter new instructor name:`,
+            section.instructor === 'TBD' ? '' : section.instructor
+        );
+
+        if (instructor === null) return; // User cancelled
+
+        const newInstructor = instructor.trim() || 'TBD';
+
+        // Check for faculty conflicts if instructor changed
+        if (newInstructor !== section.instructor && newInstructor !== 'TBD') {
+            // Find where this section is scheduled
+            let room = null, day = null, timeBlock = null;
+            for (let slotKey in this.schedule) {
+                if (this.schedule[slotKey] === sectionId) {
+                    [room, day, timeBlock] = slotKey.split('|');
+                    break;
+                }
+            }
+
+            if (room && day && timeBlock) {
+                const conflictCheck = this.checkFacultyConflict(newInstructor, day, timeBlock, sectionId);
+                if (conflictCheck.conflict) {
+                    const conflictCourse = conflictCheck.conflictingCourse;
+                    const conflictSection = conflictCheck.conflictingSection;
+                    const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
+
+                    const shouldContinue = confirm(
+                        `Faculty Conflict Warning!\n\n` +
+                        `${newInstructor} is already teaching "${conflictDisplayName}" ` +
+                        `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
+                        `Continue anyway?`
+                    );
+                    if (!shouldContinue) return;
+                }
+            }
+        }
+
+        section.instructor = newInstructor;
+        this.renderScheduleGrid();
+        alert('Section updated successfully!');
+    }
+
+    handleAddCourse() {
+        const code = document.getElementById('className').value.trim();
+        const title = document.getElementById('classTitle').value.trim();
+
+        if (!code || !title) {
+            alert('Please fill in all required fields (Course Code and Title)');
             return;
         }
 
-        if (this.editingClassId !== null) {
-            // Edit mode - update existing class
-            const classItem = this.getClassById(this.editingClassId);
-            if (classItem) {
-                classItem.name = name;
-                classItem.title = title;
-                classItem.instructor = instructor;
-                classItem.enrollment = enrollment;
-                classItem.duration = duration;
+        if (this.editingCourseId !== null) {
+            // Edit mode - update existing course
+            const course = this.getCourseById(this.editingCourseId);
+            if (course) {
+                course.code = code;
+                course.title = title;
             }
         } else {
-            // Add mode - create new class
-            const newClass = new ClassItem(this.nextClassId++, name, title, instructor, enrollment, duration);
-            this.addClass(newClass);
+            // Add mode - create new course
+            const newCourse = new Course(this.nextCourseId++, code, title);
+            this.addCourse(newCourse);
         }
 
         // Close modal and reset
         document.getElementById('addClassModal').style.display = 'none';
-        this.resetAddClassModal();
+        this.resetAddCourseModal();
 
-        // Re-render both unassigned classes and the schedule grid (in case class is scheduled)
-        this.renderUnassignedClasses();
+        // Show instructor and enrollment fields again
+        document.getElementById('instructor').parentElement.style.display = '';
+        document.getElementById('enrollment').parentElement.style.display = '';
+        document.getElementById('duration').parentElement.style.display = '';
+
+        // Re-render catalog and schedule grid
+        this.renderCourseCatalog();
         this.renderScheduleGrid();
     }
 
@@ -897,7 +1165,7 @@ class Scheduler {
         const bulkData = document.getElementById('bulkClassData').value.trim();
 
         if (!bulkData) {
-            alert('Please enter class data to import');
+            alert('Please enter course data to import');
             return;
         }
 
@@ -911,44 +1179,41 @@ class Scheduler {
             const parts = line.split('|').map(part => part.trim());
 
             if (parts.length < 2) {
-                errors.push(`Line ${index + 1}: Needs at least Course Name and Title`);
+                errors.push(`Line ${index + 1}: Needs at least Course Code and Title`);
                 errorCount++;
                 return;
             }
 
-            const name = parts[0];
+            const code = parts[0];
             const title = parts[1];
-            const instructor = parts[2] || 'TBD';
-            const enrollment = parts[3] ? parseInt(parts[3]) : 30; // Default enrollment to 30
 
             // Validate data
-            if (!name || !title) {
+            if (!code || !title) {
                 errors.push(`Line ${index + 1}: Missing required fields`);
                 errorCount++;
                 return;
             }
 
-            if (isNaN(enrollment) || enrollment < 1) {
-                errors.push(`Line ${index + 1}: Invalid enrollment number`);
+            // Check for duplicate course code
+            const duplicate = this.courses.find(c => c.code === code);
+            if (duplicate) {
+                errors.push(`Line ${index + 1}: Course ${code} already exists`);
                 errorCount++;
                 return;
             }
 
-            // Create the class
-            const newClass = new ClassItem(
-                this.nextClassId++,
-                name,
-                title,
-                instructor === '' ? 'TBD' : instructor,
-                enrollment,
-                1 // Default duration
+            // Create the course
+            const newCourse = new Course(
+                this.nextCourseId++,
+                code,
+                title
             );
-            this.addClass(newClass);
+            this.addCourse(newCourse);
             successCount++;
         });
 
         // Show results
-        let message = `Import completed!\n\nSuccessfully imported: ${successCount} classes`;
+        let message = `Import completed!\n\nSuccessfully imported: ${successCount} courses`;
         if (errorCount > 0) {
             message += `\nErrors: ${errorCount}`;
             if (errors.length > 0) {
@@ -966,8 +1231,7 @@ class Scheduler {
         document.getElementById('bulkClassData').value = '';
 
         // Re-render
-        this.renderUnassignedClasses();
-        this.renderScheduleGrid();
+        this.renderCourseCatalog();
     }
 
     handleConfigUpdate() {
@@ -1025,7 +1289,7 @@ class Scheduler {
 
         // Re-render
         this.renderScheduleGrid();
-        this.renderUnassignedClasses();
+        this.renderCourseCatalog();
     }
 
     showReportsModal() {
@@ -1044,49 +1308,49 @@ class Scheduler {
     }
 
     generateReportData() {
-        const scheduledClasses = [];
-        const unscheduledClasses = [];
+        const scheduledSections = [];
 
-        // Get scheduled classes
+        // Get scheduled sections
         for (let slotKey in this.schedule) {
             const [room, day, timeBlock] = slotKey.split('|');
-            const classItem = this.getClassById(this.schedule[slotKey]);
-            if (classItem) {
-                scheduledClasses.push({
-                    ...classItem,
-                    room,
-                    day,
-                    timeBlock
-                });
+            const section = this.getSectionById(this.schedule[slotKey]);
+            if (section) {
+                const course = this.getCourseById(section.courseId);
+                if (course) {
+                    scheduledSections.push({
+                        section,
+                        course,
+                        displayName: section.getDisplayName(course.code),
+                        room,
+                        day,
+                        timeBlock
+                    });
+                }
             }
         }
 
-        // Get unscheduled classes
-        this.classes.forEach(c => {
-            if (!this.isClassScheduled(c.id)) {
-                unscheduledClasses.push(c);
-            }
-        });
-
         // Sort by various criteria
-        const byEnrollment = [...this.classes].sort((a, b) => b.enrollment - a.enrollment);
-        const byInstructor = [...this.classes].sort((a, b) => a.instructor.localeCompare(b.instructor));
-        const byClassName = [...this.classes].sort((a, b) => a.name.localeCompare(b.name));
+        const byCourse = [...scheduledSections].sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const byInstructor = [...scheduledSections].sort((a, b) => a.section.instructor.localeCompare(b.section.instructor));
+        const byEnrollment = [...scheduledSections].sort((a, b) => b.section.enrollment - a.section.enrollment);
 
         // Get faculty conflict information
         const facultyConflicts = this.detectAllFacultyConflicts();
 
+        // Calculate statistics
+        const totalEnrollment = this.sections.reduce((sum, s) => sum + s.enrollment, 0);
+
         return {
-            scheduledClasses,
-            unscheduledClasses,
-            byEnrollment,
+            scheduledSections,
+            byCourse,
             byInstructor,
-            byClassName,
+            byEnrollment,
             facultyConflicts,
-            totalClasses: this.classes.length,
-            totalScheduled: scheduledClasses.length,
-            totalUnscheduled: unscheduledClasses.length,
-            totalEnrollment: this.classes.reduce((sum, c) => sum + c.enrollment, 0)
+            totalCourses: this.courses.length,
+            totalSections: this.sections.length,
+            totalScheduled: scheduledSections.length,
+            totalUnscheduled: this.sections.length - scheduledSections.length,
+            totalEnrollment
         };
     }
 
@@ -1099,26 +1363,34 @@ class Scheduler {
             if (checked.has(slotKey)) continue;
 
             const [room, day, timeBlock] = slotKey.split('|');
-            const classId = this.schedule[slotKey];
-            const classItem = this.getClassById(classId);
+            const sectionId = this.schedule[slotKey];
+            const section = this.getSectionById(sectionId);
 
-            if (!classItem) continue;
+            if (!section) continue;
 
             const conflictCheck = this.checkFacultyConflict(
-                classItem.instructor,
+                section.instructor,
                 day,
                 timeBlock,
-                classId
+                sectionId
             );
 
             if (conflictCheck.conflict) {
+                const course = this.getCourseById(section.courseId);
+                const conflictCourse = conflictCheck.conflictingCourse;
+                const conflictSection = conflictCheck.conflictingSection;
+
                 conflicts.push({
-                    instructor: classItem.instructor,
+                    instructor: section.instructor,
                     day,
                     timeBlock,
-                    class1: classItem,
+                    section1: section,
+                    course1: course,
+                    displayName1: section.getDisplayName(course.code),
                     room1: room,
-                    class2: conflictCheck.conflictingClass,
+                    section2: conflictSection,
+                    course2: conflictCourse,
+                    displayName2: conflictSection.getDisplayName(conflictCourse.code),
                     room2: conflictCheck.conflictingRoom
                 });
             }
@@ -1135,16 +1407,16 @@ class Scheduler {
                 <h3>Summary Statistics</h3>
                 <div class="stats-grid">
                     <div class="stat-item">
-                        <div class="stat-label">Total Classes</div>
-                        <div class="stat-value">${data.totalClasses}</div>
+                        <div class="stat-label">Total Courses</div>
+                        <div class="stat-value">${data.totalCourses}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Total Sections</div>
+                        <div class="stat-value">${data.totalSections}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-label">Scheduled</div>
                         <div class="stat-value">${data.totalScheduled}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Unscheduled</div>
-                        <div class="stat-value">${data.totalUnscheduled}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-label">Total Enrollment</div>
@@ -1166,9 +1438,9 @@ class Scheduler {
                             <th>Instructor</th>
                             <th>Day</th>
                             <th>Time</th>
-                            <th>Class 1</th>
+                            <th>Section 1</th>
                             <th>Room 1</th>
-                            <th>Class 2</th>
+                            <th>Section 2</th>
                             <th>Room 2</th>
                         </tr>
                     </thead>
@@ -1178,9 +1450,9 @@ class Scheduler {
                                 <td><strong>${conflict.instructor}</strong></td>
                                 <td>${conflict.day}</td>
                                 <td>${conflict.timeBlock}</td>
-                                <td>${conflict.class1.name}</td>
+                                <td>${conflict.displayName1}</td>
                                 <td>${conflict.room1}</td>
-                                <td>${conflict.class2.name}</td>
+                                <td>${conflict.displayName2}</td>
                                 <td>${conflict.room2}</td>
                             </tr>
                         `).join('')}
@@ -1190,12 +1462,12 @@ class Scheduler {
             ` : ''}
 
             <div class="report-section">
-                <h3>Scheduled Classes by Location and Time</h3>
+                <h3>Scheduled Sections by Location and Time</h3>
                 <table class="report-table">
                     <thead>
                         <tr>
-                            <th>Course</th>
-                            <th>Title</th>
+                            <th>Section</th>
+                            <th>Course Title</th>
                             <th>Instructor</th>
                             <th>Room</th>
                             <th>Day</th>
@@ -1204,67 +1476,39 @@ class Scheduler {
                         </tr>
                     </thead>
                     <tbody>
-                        ${data.scheduledClasses.map(c => `
+                        ${data.scheduledSections.map(item => `
                             <tr>
-                                <td>${c.name}</td>
-                                <td>${c.title}</td>
-                                <td>${c.instructor}</td>
-                                <td>${c.room}</td>
-                                <td>${c.day}</td>
-                                <td>${c.timeBlock}</td>
-                                <td>${c.enrollment}</td>
+                                <td>${item.displayName}</td>
+                                <td>${item.course.title}</td>
+                                <td>${item.section.instructor}</td>
+                                <td>${item.room}</td>
+                                <td>${item.day}</td>
+                                <td>${item.timeBlock}</td>
+                                <td>${item.section.enrollment}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
 
-            ${data.unscheduledClasses.length > 0 ? `
             <div class="report-section">
-                <h3>Unscheduled Classes</h3>
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Course</th>
-                            <th>Title</th>
-                            <th>Instructor</th>
-                            <th>Enrollment</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.unscheduledClasses.map(c => `
-                            <tr>
-                                <td>${c.name}</td>
-                                <td>${c.title}</td>
-                                <td>${c.instructor}</td>
-                                <td>${c.enrollment}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-            ` : ''}
-
-            <div class="report-section">
-                <h3>Classes by Instructor</h3>
+                <h3>Sections by Instructor</h3>
                 <table class="report-table">
                     <thead>
                         <tr>
                             <th>Instructor</th>
-                            <th>Course</th>
-                            <th>Title</th>
+                            <th>Section</th>
+                            <th>Course Title</th>
                             <th>Enrollment</th>
-                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${data.byInstructor.map(c => `
+                        ${data.byInstructor.map(item => `
                             <tr>
-                                <td>${c.instructor}</td>
-                                <td>${c.name}</td>
-                                <td>${c.title}</td>
-                                <td>${c.enrollment}</td>
-                                <td>${this.isClassScheduled(c.id) ? 'Scheduled' : 'Unscheduled'}</td>
+                                <td>${item.section.instructor}</td>
+                                <td>${item.displayName}</td>
+                                <td>${item.course.title}</td>
+                                <td>${item.section.enrollment}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1276,23 +1520,11 @@ class Scheduler {
     }
 
     exportReportCSV(data) {
-        let csv = 'Course,Title,Instructor,Room,Day,Time,Enrollment,Status\n';
+        let csv = 'Section,Course Title,Instructor,Room,Day,Time,Enrollment\n';
 
-        // Add all classes
-        this.classes.forEach(c => {
-            const scheduled = this.isClassScheduled(c.id);
-            let room = '', day = '', timeBlock = '';
-
-            if (scheduled) {
-                for (let slotKey in this.schedule) {
-                    if (this.schedule[slotKey] === c.id) {
-                        [room, day, timeBlock] = slotKey.split('|');
-                        break;
-                    }
-                }
-            }
-
-            csv += `"${c.name}","${c.title}","${c.instructor}","${room}","${day}","${timeBlock}",${c.enrollment},${scheduled ? 'Scheduled' : 'Unscheduled'}\n`;
+        // Add all scheduled sections
+        data.scheduledSections.forEach(item => {
+            csv += `"${item.displayName}","${item.course.title}","${item.section.instructor}","${item.room}","${item.day}","${item.timeBlock}",${item.section.enrollment}\n`;
         });
 
         // Download CSV
@@ -1348,15 +1580,17 @@ class Scheduler {
     clearSchedule() {
         this.schedule = {};
         this.renderScheduleGrid();
-        this.renderUnassignedClasses();
+        this.renderCourseCatalog();
     }
 
     async saveToServer() {
         const data = {
             config: this.config,
-            classes: this.classes,
+            courses: this.courses,
+            sections: this.sections,
             schedule: this.schedule,
-            nextClassId: this.nextClassId
+            nextCourseId: this.nextCourseId,
+            nextSectionId: this.nextSectionId
         };
 
         try {
@@ -1403,6 +1637,18 @@ class Scheduler {
                         this.config.roomOrder = [...this.config.rooms];
                     }
 
+                    // Handle room capacities
+                    if (data.config.roomCapacities) {
+                        this.config.roomCapacities = data.config.roomCapacities;
+                    } else {
+                        // Initialize default capacities for all rooms
+                        this.config.rooms.forEach(room => {
+                            if (!this.config.roomCapacities[room]) {
+                                this.config.roomCapacities[room] = 30;
+                            }
+                        });
+                    }
+
                     // Handle both old timeBlocks and new timeBlocksByDay
                     if (data.config.timeBlocksByDay) {
                         this.config.timeBlocksByDay = data.config.timeBlocksByDay;
@@ -1414,12 +1660,25 @@ class Scheduler {
                     }
                 }
 
-                this.classes = data.classes.map(c => new ClassItem(c.id, c.name, c.title, c.instructor, c.enrollment, c.duration));
-                this.schedule = data.schedule;
-                this.nextClassId = data.nextClassId;
+                // Load courses and sections
+                if (data.courses && data.sections) {
+                    // New format
+                    this.courses = data.courses.map(c => new Course(c.id, c.code, c.title));
+                    this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration));
+                    this.nextCourseId = data.nextCourseId || this.nextCourseId;
+                    this.nextSectionId = data.nextSectionId || this.nextSectionId;
+                } else if (data.classes) {
+                    // Old format - migrate classes to courses (without sections)
+                    this.courses = [];
+                    this.sections = [];
+                    // Just create empty catalog - user can add courses manually
+                    console.log('Migrated from old class-based format');
+                }
+
+                this.schedule = data.schedule || {};
 
                 this.renderScheduleGrid();
-                this.renderUnassignedClasses();
+                this.renderCourseCatalog();
 
                 console.log('Data loaded from server successfully');
             } else if (!result.success) {
@@ -1436,7 +1695,8 @@ class Scheduler {
     exportToJSON() {
         const exportData = {
             config: this.config,
-            classes: this.classes,
+            courses: this.courses,
+            sections: this.sections,
             schedule: this.schedule,
             exportDate: new Date().toISOString()
         };
@@ -1445,19 +1705,22 @@ class Scheduler {
         const readableSchedule = [];
         for (let slotKey in this.schedule) {
             const [room, day, timeBlock] = slotKey.split('|');
-            const classItem = this.getClassById(this.schedule[slotKey]);
-            if (classItem) {
-                readableSchedule.push({
-                    room,
-                    day,
-                    timeBlock,
-                    class: {
-                        name: classItem.name,
-                        title: classItem.title,
-                        instructor: classItem.instructor,
-                        enrollment: classItem.enrollment
-                    }
-                });
+            const section = this.getSectionById(this.schedule[slotKey]);
+            if (section) {
+                const course = this.getCourseById(section.courseId);
+                if (course) {
+                    readableSchedule.push({
+                        room,
+                        day,
+                        timeBlock,
+                        section: {
+                            displayName: section.getDisplayName(course.code),
+                            courseTitle: course.title,
+                            instructor: section.instructor,
+                            enrollment: section.enrollment
+                        }
+                    });
+                }
             }
         }
         exportData.readableSchedule = readableSchedule;

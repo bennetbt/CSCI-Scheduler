@@ -11,8 +11,8 @@
         <header>
             <h1>College Class Scheduler</h1>
             <div class="controls">
-                <button id="addClassBtn" class="btn btn-primary">Add Class</button>
-                <button id="bulkImportBtn" class="btn btn-primary">Bulk Import Classes</button>
+                <button id="addClassBtn" class="btn btn-primary">Add Course</button>
+                <button id="bulkImportBtn" class="btn btn-primary">Bulk Import Courses</button>
                 <button id="configBtn" class="btn btn-secondary">Configure Rooms/Times</button>
                 <button id="reportsBtn" class="btn btn-info">View Reports</button>
                 <button id="saveBtn" class="btn btn-success">Save Schedule</button>
@@ -23,11 +23,11 @@
         </header>
 
         <div class="main-content">
-            <!-- Sidebar with unassigned classes -->
+            <!-- Sidebar with course catalog -->
             <aside class="sidebar">
-                <h2>Unassigned Classes</h2>
+                <h2>Course Catalog</h2>
                 <div id="unassignedClasses" class="class-pool">
-                    <!-- Classes will be added here dynamically -->
+                    <!-- Courses will be added here dynamically -->
                 </div>
             </aside>
 
@@ -40,33 +40,33 @@
         </div>
     </div>
 
-    <!-- Modal for adding classes -->
+    <!-- Modal for adding courses -->
     <div id="addClassModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
-            <h2>Add New Class</h2>
+            <h2>Add New Course</h2>
             <form id="addClassForm">
                 <div class="form-group">
-                    <label for="className">Class Name:</label>
+                    <label for="className">Course Code:</label>
                     <input type="text" id="className" required placeholder="e.g., CSCI 101">
                 </div>
                 <div class="form-group">
-                    <label for="classTitle">Class Title:</label>
+                    <label for="classTitle">Course Title:</label>
                     <input type="text" id="classTitle" required placeholder="e.g., Introduction to Computer Science">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="display:none;">
                     <label for="instructor">Instructor (optional):</label>
-                    <input type="text" id="instructor" placeholder="e.g., Dr. Smith (leave blank if TBD)">
+                    <input type="text" id="instructor" placeholder="Set when scheduling section">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="display:none;">
                     <label for="enrollment">Expected Enrollment:</label>
                     <input type="number" id="enrollment" value="30">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="display:none;">
                     <label for="duration">Duration (blocks):</label>
                     <input type="number" id="duration" value="1" min="1">
                 </div>
-                <button type="submit" class="btn btn-primary">Add Class</button>
+                <button type="submit" class="btn btn-primary">Add Course</button>
             </form>
         </div>
     </div>
@@ -116,26 +116,22 @@
     <div id="bulkImportModal" class="modal">
         <div class="modal-content modal-large">
             <span class="close">&times;</span>
-            <h2>Bulk Import Classes</h2>
+            <h2>Bulk Import Courses</h2>
             <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Enter classes one per line. You can use any of these formats:
+                Enter courses one per line using the format: Course Code | Course Title
             </p>
-            <ul style="color: #7f8c8d; margin-bottom: 1rem; margin-left: 2rem;">
-                <li><strong>Format 1:</strong> Course Name | Course Title | Instructor | Enrollment</li>
-                <li><strong>Format 2:</strong> Course Name | Course Title | Instructor</li>
-                <li><strong>Format 3:</strong> Course Name | Course Title</li>
-            </ul>
             <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Example: <code>CSCI 101 | Intro to Computer Science | Dr. Smith | 35</code><br>
-                Leave instructor blank or type "TBD" for unassigned classes.
+                Example: <code>CSCI 101 | Intro to Computer Science</code><br>
+                <code>CSCI 201 | Data Structures</code><br>
+                Sections and instructors will be assigned when you drag courses to the schedule.
             </p>
             <form id="bulkImportForm">
                 <div class="form-group">
-                    <label for="bulkClassData">Class Data (one per line):</label>
-                    <textarea id="bulkClassData" rows="15" required placeholder="CSCI 101 | Intro to Computer Science | Dr. Smith | 35&#10;CSCI 201 | Data Structures | Dr. Johnson | 30&#10;CSCI 301 | Algorithms | Prof. Williams | 25"></textarea>
+                    <label for="bulkClassData">Course Data (one per line):</label>
+                    <textarea id="bulkClassData" rows="15" required placeholder="CSCI 101 | Intro to Computer Science&#10;CSCI 201 | Data Structures&#10;CSCI 301 | Algorithms"></textarea>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
-                    <button type="submit" class="btn btn-primary">Import Classes</button>
+                    <button type="submit" class="btn btn-primary">Import Courses</button>
                     <button type="button" class="btn btn-secondary" onclick="document.getElementById('bulkImportModal').style.display='none'">Cancel</button>
                 </div>
             </form>
