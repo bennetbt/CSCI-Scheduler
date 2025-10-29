@@ -905,8 +905,8 @@ class Scheduler {
         const instructorName = instructor ? instructor.trim() : 'TBD';
 
         // Check if section already exists with same number
-        const existingSections = this.getSectionsForCourse(courseId);
-        const duplicate = existingSections.find(s => s.sectionNumber === sectionNumber);
+        const courseSections = this.getSectionsForCourse(courseId);
+        const duplicate = courseSections.find(s => s.sectionNumber === sectionNumber);
         if (duplicate) {
             const shouldContinue = confirm(
                 `A section ${course.code}-${sectionNumber} already exists.\n\n` +
