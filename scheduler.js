@@ -1,9 +1,10 @@
 // Data Models
 class Course {
-    constructor(id, code, title) {
+    constructor(id, code, title, credits = 3) {
         this.id = id;
         this.code = code; // e.g., "CSCI 101"
         this.title = title; // e.g., "Intro to Computer Science"
+        this.credits = credits; // Default to 3 credits
     }
 }
 
@@ -960,7 +961,7 @@ class Scheduler {
             let crossListedCourse = this.courses.find(c => c.code === crossListedCode);
             if (!crossListedCourse) {
                 // Create the cross-listed course automatically
-                crossListedCourse = new Course(this.nextCourseId++, crossListedCode, course.title);
+                crossListedCourse = new Course(this.nextCourseId++, crossListedCode, course.title, course.credits);
                 this.addCourse(crossListedCourse);
             }
 
@@ -1101,6 +1102,7 @@ class Scheduler {
         // Populate form with existing data
         document.getElementById('className').value = course.code;
         document.getElementById('classTitle').value = course.title;
+        document.getElementById('classCredits').value = course.credits || 3;
 
         // Hide instructor and enrollment fields for course editing
         document.getElementById('instructor').parentElement.style.display = 'none';
@@ -1197,6 +1199,7 @@ class Scheduler {
     handleAddCourse() {
         const code = document.getElementById('className').value.trim();
         const title = document.getElementById('classTitle').value.trim();
+        const credits = parseInt(document.getElementById('classCredits').value) || 3;
 
         if (!code || !title) {
             alert('Please fill in all required fields (Course Code and Title)');
@@ -1209,10 +1212,11 @@ class Scheduler {
             if (course) {
                 course.code = code;
                 course.title = title;
+                course.credits = credits;
             }
         } else {
             // Add mode - create new course
-            const newCourse = new Course(this.nextCourseId++, code, title);
+            const newCourse = new Course(this.nextCourseId++, code, title, credits);
             this.addCourse(newCourse);
         }
 
@@ -1255,6 +1259,7 @@ class Scheduler {
 
             const code = parts[0];
             const title = parts[1];
+            const credits = parts[2] ? parseInt(parts[2]) : 3; // Optional credits field, defaults to 3
 
             // Validate data
             if (!code || !title) {
@@ -1275,7 +1280,8 @@ class Scheduler {
             const newCourse = new Course(
                 this.nextCourseId++,
                 code,
-                title
+                title,
+                credits
             );
             this.addCourse(newCourse);
             successCount++;
@@ -1369,6 +1375,9 @@ class Scheduler {
         const reportContent = document.getElementById('reportContent');
         reportContent.innerHTML = this.renderReportHTML(reportData);
 
+        // Setup sorting functionality
+        this.setupReportSorting();
+
         // Setup export handlers
         document.getElementById('exportReportCSV').onclick = () => this.exportReportCSV(reportData);
         document.getElementById('exportReportHTML').onclick = () => this.exportReportHTML(reportData);
@@ -1389,13 +1398,27 @@ class Scheduler {
                 if (section) {
                     const course = this.getCourseById(section.courseId);
                     if (course) {
+                        // Parse room into building and room number
+                        const roomParts = room.split(' ');
+                        const building = roomParts.length > 1 ? roomParts.slice(0, -1).join(' ') : room;
+                        const roomNumber = roomParts.length > 1 ? roomParts[roomParts.length - 1] : '';
+
+                        // Parse time block into start and end times
+                        const timeParts = timeBlock.split('-').map(t => t.trim());
+                        const startTime = timeParts[0] || '';
+                        const endTime = timeParts[1] || '';
+
                         scheduledSections.push({
                             section,
                             course,
                             displayName: section.getDisplayName(course.code),
                             room,
+                            building,
+                            roomNumber,
                             day,
-                            timeBlock
+                            timeBlock,
+                            startTime,
+                            endTime
                         });
                     }
                 }
@@ -1538,28 +1561,38 @@ class Scheduler {
             ` : ''}
 
             <div class="report-section">
-                <h3>Scheduled Sections by Location and Time</h3>
-                <table class="report-table">
+                <h3>Scheduled Sections</h3>
+                <table class="report-table sortable-report" id="mainReportTable">
                     <thead>
                         <tr>
-                            <th>Section</th>
-                            <th>Course Title</th>
-                            <th>Instructor</th>
-                            <th>Room</th>
-                            <th>Day</th>
-                            <th>Time</th>
-                            <th>Enrollment</th>
+                            <th data-sort="courseId" class="sortable">Course ID <span class="sort-arrow">↕</span></th>
+                            <th data-sort="title" class="sortable">Title <span class="sort-arrow">↕</span></th>
+                            <th data-sort="crn" class="sortable">CRN <span class="sort-arrow">↕</span></th>
+                            <th data-sort="credits" class="sortable">Credits <span class="sort-arrow">↕</span></th>
+                            <th data-sort="days" class="sortable">Days <span class="sort-arrow">↕</span></th>
+                            <th data-sort="startTime" class="sortable">Start Time <span class="sort-arrow">↕</span></th>
+                            <th data-sort="endTime" class="sortable">End Time <span class="sort-arrow">↕</span></th>
+                            <th data-sort="building" class="sortable">Building <span class="sort-arrow">↕</span></th>
+                            <th data-sort="room" class="sortable">Room <span class="sort-arrow">↕</span></th>
+                            <th data-sort="meetingType" class="sortable">Meeting Type <span class="sort-arrow">↕</span></th>
+                            <th data-sort="instructor" class="sortable">Instructor <span class="sort-arrow">↕</span></th>
+                            <th data-sort="enrollment" class="sortable">Max Enrollment <span class="sort-arrow">↕</span></th>
                         </tr>
                     </thead>
                     <tbody>
                         ${data.scheduledSections.map(item => `
                             <tr>
-                                <td>${item.displayName}</td>
+                                <td>${item.course.code}</td>
                                 <td>${item.course.title}</td>
-                                <td>${item.section.instructor}</td>
-                                <td>${item.room}</td>
+                                <td>${item.section.sectionNumber}</td>
+                                <td>${item.course.credits || 3}</td>
                                 <td>${item.day}</td>
-                                <td>${item.timeBlock}</td>
+                                <td>${item.startTime}</td>
+                                <td>${item.endTime}</td>
+                                <td>${item.building}</td>
+                                <td>${item.roomNumber}</td>
+                                <td>Lecture</td>
+                                <td>${item.section.instructor}</td>
                                 <td>${item.section.enrollment}</td>
                             </tr>
                         `).join('')}
@@ -1595,12 +1628,85 @@ class Scheduler {
         return html;
     }
 
+    setupReportSorting() {
+        const table = document.getElementById('mainReportTable');
+        if (!table) return;
+
+        const headers = table.querySelectorAll('th.sortable');
+        let currentSort = { column: null, direction: 'asc' };
+
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const sortKey = header.getAttribute('data-sort');
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                // Determine sort direction
+                if (currentSort.column === sortKey) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.direction = 'asc';
+                }
+                currentSort.column = sortKey;
+
+                // Map sort keys to column indices
+                const columnMap = {
+                    'courseId': 0,
+                    'title': 1,
+                    'crn': 2,
+                    'credits': 3,
+                    'days': 4,
+                    'startTime': 5,
+                    'endTime': 6,
+                    'building': 7,
+                    'room': 8,
+                    'meetingType': 9,
+                    'instructor': 10,
+                    'enrollment': 11
+                };
+
+                const columnIndex = columnMap[sortKey];
+
+                // Sort rows
+                rows.sort((a, b) => {
+                    const aValue = a.cells[columnIndex].textContent.trim();
+                    const bValue = b.cells[columnIndex].textContent.trim();
+
+                    // Check if values are numbers
+                    const aNum = parseFloat(aValue);
+                    const bNum = parseFloat(bValue);
+
+                    let comparison = 0;
+                    if (!isNaN(aNum) && !isNaN(bNum)) {
+                        // Numeric comparison
+                        comparison = aNum - bNum;
+                    } else {
+                        // String comparison
+                        comparison = aValue.localeCompare(bValue);
+                    }
+
+                    return currentSort.direction === 'asc' ? comparison : -comparison;
+                });
+
+                // Clear tbody and re-add sorted rows
+                tbody.innerHTML = '';
+                rows.forEach(row => tbody.appendChild(row));
+
+                // Update header styling
+                headers.forEach(h => {
+                    h.classList.remove('sorted-asc', 'sorted-desc');
+                });
+                header.classList.add(`sorted-${currentSort.direction}`);
+            });
+        });
+    }
+
     exportReportCSV(data) {
-        let csv = 'Section,Course Title,Instructor,Room,Day,Time,Enrollment\n';
+        let csv = 'Course ID,Title,CRN,Credits,Days,Start Time,End Time,Building,Room,Meeting Type,Instructor,Max Enrollment\n';
 
         // Add all scheduled sections
         data.scheduledSections.forEach(item => {
-            csv += `"${item.displayName}","${item.course.title}","${item.section.instructor}","${item.room}","${item.day}","${item.timeBlock}",${item.section.enrollment}\n`;
+            csv += `"${item.course.code}","${item.course.title}","${item.section.sectionNumber}",${item.course.credits || 3},"${item.day}","${item.startTime}","${item.endTime}","${item.building}","${item.roomNumber}","Lecture","${item.section.instructor}",${item.section.enrollment}\n`;
         });
 
         // Download CSV
@@ -1739,7 +1845,7 @@ class Scheduler {
                 // Load courses and sections
                 if (data.courses && data.sections) {
                     // New format
-                    this.courses = data.courses.map(c => new Course(c.id, c.code, c.title));
+                    this.courses = data.courses.map(c => new Course(c.id, c.code, c.title, c.credits));
                     this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration));
                     this.nextCourseId = data.nextCourseId || this.nextCourseId;
                     this.nextSectionId = data.nextSectionId || this.nextSectionId;

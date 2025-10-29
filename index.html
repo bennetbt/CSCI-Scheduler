@@ -54,6 +54,10 @@
                     <label for="classTitle">Course Title:</label>
                     <input type="text" id="classTitle" required placeholder="e.g., Introduction to Computer Science">
                 </div>
+                <div class="form-group">
+                    <label for="classCredits">Credits:</label>
+                    <input type="number" id="classCredits" value="3" min="1" max="6">
+                </div>
                 <div class="form-group" style="display:none;">
                     <label for="instructor">Instructor (optional):</label>
                     <input type="text" id="instructor" placeholder="Set when scheduling section">
@@ -118,11 +122,12 @@
             <span class="close">&times;</span>
             <h2>Bulk Import Courses</h2>
             <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Enter courses one per line using the format: Course Code | Course Title
+                Enter courses one per line using the format: Course Code | Course Title | Credits (optional)
             </p>
             <p style="color: #7f8c8d; margin-bottom: 1rem;">
-                Example: <code>CSCI 101 | Intro to Computer Science</code><br>
-                <code>CSCI 201 | Data Structures</code><br>
+                Example: <code>CSCI 101 | Intro to Computer Science | 3</code><br>
+                <code>CSCI 201 | Data Structures | 4</code><br>
+                <code>CSCI 301 | Algorithms</code> (defaults to 3 credits)<br>
                 Sections and instructors will be assigned when you drag courses to the schedule.
             </p>
             <form id="bulkImportForm">
