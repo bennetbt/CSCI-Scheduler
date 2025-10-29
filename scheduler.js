@@ -158,6 +158,11 @@ class Scheduler {
         this.draggedSectionId = null; // For dragging scheduled sections
         this.editingCourseId = null; // Track which course is being edited
 
+        // Semester and campus tracking
+        this.semester = 'Fall'; // Fall, Spring, Summer
+        this.year = new Date().getFullYear();
+        this.campus = 'Main Campus'; // Main Campus, BlueSky Tennessee Institute
+
         this.init();
     }
 
@@ -227,6 +232,25 @@ class Scheduler {
                 this.clearSchedule();
             }
         });
+
+        // Semester, Year, and Campus selectors
+        document.getElementById('semesterSelect').addEventListener('change', (e) => {
+            this.semester = e.target.value;
+            this.saveToServer(); // Auto-save when changed
+        });
+
+        document.getElementById('yearInput').addEventListener('change', (e) => {
+            this.year = parseInt(e.target.value);
+            this.saveToServer(); // Auto-save when changed
+        });
+
+        document.getElementById('campusSelect').addEventListener('change', (e) => {
+            this.campus = e.target.value;
+            this.saveToServer(); // Auto-save when changed
+        });
+
+        // Initialize semester/year/campus UI
+        this.updateScheduleInfoUI();
 
         // Add course form
         document.getElementById('addClassForm').addEventListener('submit', (e) => {
@@ -784,6 +808,13 @@ class Scheduler {
             const card = this.createCourseCard(course);
             container.appendChild(card);
         });
+    }
+
+    updateScheduleInfoUI() {
+        // Update UI to reflect current semester, year, and campus
+        document.getElementById('semesterSelect').value = this.semester;
+        document.getElementById('yearInput').value = this.year;
+        document.getElementById('campusSelect').value = this.campus;
     }
 
     createCourseCard(course) {
@@ -1503,6 +1534,16 @@ class Scheduler {
     renderReportHTML(data) {
         let html = `
             <div class="report-section">
+                <div class="report-header">
+                    <h3 style="margin-bottom: 0.5rem;">Schedule Report</h3>
+                    <div class="report-info">
+                        <span><strong>Semester:</strong> ${this.semester} ${this.year}</span>
+                        <span style="margin-left: 2rem;"><strong>Campus:</strong> ${this.campus}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="report-section">
                 <h3>Summary Statistics</h3>
                 <div class="stats-grid">
                     <div class="stat-item">
@@ -1702,7 +1743,11 @@ class Scheduler {
     }
 
     exportReportCSV(data) {
-        let csv = 'Course ID,Title,CRN,Credits,Days,Start Time,End Time,Building,Room,Meeting Type,Instructor,Max Enrollment\n';
+        // Add schedule info header
+        let csv = `Semester: ${this.semester} ${this.year}\n`;
+        csv += `Campus: ${this.campus}\n`;
+        csv += `\n`; // Blank line
+        csv += 'Course ID,Title,CRN,Credits,Days,Start Time,End Time,Building,Room,Meeting Type,Instructor,Max Enrollment\n';
 
         // Add all scheduled sections
         data.scheduledSections.forEach(item => {
@@ -1772,7 +1817,10 @@ class Scheduler {
             sections: this.sections,
             schedule: this.schedule,
             nextCourseId: this.nextCourseId,
-            nextSectionId: this.nextSectionId
+            nextSectionId: this.nextSectionId,
+            semester: this.semester,
+            year: this.year,
+            campus: this.campus
         };
 
         try {
@@ -1874,6 +1922,14 @@ class Scheduler {
                     this.schedule = {};
                 }
 
+                // Load semester, year, and campus with defaults
+                this.semester = data.semester || 'Fall';
+                this.year = data.year || new Date().getFullYear();
+                this.campus = data.campus || 'Main Campus';
+
+                // Update the UI to reflect loaded values
+                this.updateScheduleInfoUI();
+
                 this.renderScheduleGrid();
                 this.renderCourseCatalog();
 
@@ -1895,6 +1951,9 @@ class Scheduler {
             courses: this.courses,
             sections: this.sections,
             schedule: this.schedule,
+            semester: this.semester,
+            year: this.year,
+            campus: this.campus,
             exportDate: new Date().toISOString()
         };
 

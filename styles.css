@@ -31,6 +31,48 @@ header h1 {
     font-size: 1.8rem;
 }
 
+.schedule-info {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.info-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.info-group label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #ecf0f1;
+}
+
+.info-select,
+.info-input {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #34495e;
+    border-radius: 4px;
+    background-color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.info-input {
+    width: 80px;
+}
+
+.info-select:focus,
+.info-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
 .controls {
     display: flex;
     gap: 0.5rem;
@@ -579,6 +621,16 @@ header h1 {
 }
 
 /* Report Styles */
+.report-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.report-info {
+    color: #7f8c8d;
+    font-size: 1rem;
+}
+
 .report-controls {
     margin-bottom: 1.5rem;
     display: flex;
