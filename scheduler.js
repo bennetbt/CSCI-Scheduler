@@ -155,6 +155,11 @@ class Scheduler {
             this.showModal('addClassModal');
         });
 
+        // Bulk Import button
+        document.getElementById('bulkImportBtn').addEventListener('click', () => {
+            this.showModal('bulkImportModal');
+        });
+
         // Configure button
         document.getElementById('configBtn').addEventListener('click', () => {
             this.showConfigModal();
@@ -191,6 +196,12 @@ class Scheduler {
         document.getElementById('addClassForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleAddClass();
+        });
+
+        // Bulk import form
+        document.getElementById('bulkImportForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleBulkImport();
         });
 
         // Config form
@@ -468,6 +479,38 @@ class Scheduler {
             <p>${classItem.instructor}</p>
             <p>${classItem.enrollment} students</p>
         `;
+
+        // Add action buttons container
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'slot-actions';
+
+        // Add edit button
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.className = 'slot-edit-btn';
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.editClass(classItem.id);
+        };
+        actionsDiv.appendChild(editBtn);
+
+        // Add remove button (unschedule from this slot)
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = 'Remove';
+        removeBtn.className = 'slot-remove-btn';
+        removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (currentRoom && currentDay && currentTimeBlock) {
+                if (confirm(`Remove "${classItem.name}" from ${currentDay} at ${currentTimeBlock}?`)) {
+                    this.removeClassFromSlot(currentRoom, currentDay, currentTimeBlock);
+                    this.renderScheduleGrid();
+                    this.renderUnassignedClasses();
+                }
+            }
+        };
+        actionsDiv.appendChild(removeBtn);
+
+        div.appendChild(actionsDiv);
 
         // Add quick-copy buttons for MW/TR patterns
         if (currentRoom && currentDay && currentTimeBlock) {
@@ -846,6 +889,83 @@ class Scheduler {
         this.resetAddClassModal();
 
         // Re-render both unassigned classes and the schedule grid (in case class is scheduled)
+        this.renderUnassignedClasses();
+        this.renderScheduleGrid();
+    }
+
+    handleBulkImport() {
+        const bulkData = document.getElementById('bulkClassData').value.trim();
+
+        if (!bulkData) {
+            alert('Please enter class data to import');
+            return;
+        }
+
+        const lines = bulkData.split('\n').map(line => line.trim()).filter(line => line);
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+
+        lines.forEach((line, index) => {
+            // Parse line using pipe separator
+            const parts = line.split('|').map(part => part.trim());
+
+            if (parts.length < 2) {
+                errors.push(`Line ${index + 1}: Needs at least Course Name and Title`);
+                errorCount++;
+                return;
+            }
+
+            const name = parts[0];
+            const title = parts[1];
+            const instructor = parts[2] || 'TBD';
+            const enrollment = parts[3] ? parseInt(parts[3]) : 30; // Default enrollment to 30
+
+            // Validate data
+            if (!name || !title) {
+                errors.push(`Line ${index + 1}: Missing required fields`);
+                errorCount++;
+                return;
+            }
+
+            if (isNaN(enrollment) || enrollment < 1) {
+                errors.push(`Line ${index + 1}: Invalid enrollment number`);
+                errorCount++;
+                return;
+            }
+
+            // Create the class
+            const newClass = new ClassItem(
+                this.nextClassId++,
+                name,
+                title,
+                instructor === '' ? 'TBD' : instructor,
+                enrollment,
+                1 // Default duration
+            );
+            this.addClass(newClass);
+            successCount++;
+        });
+
+        // Show results
+        let message = `Import completed!\n\nSuccessfully imported: ${successCount} classes`;
+        if (errorCount > 0) {
+            message += `\nErrors: ${errorCount}`;
+            if (errors.length > 0) {
+                message += '\n\nError details:\n' + errors.slice(0, 5).join('\n');
+                if (errors.length > 5) {
+                    message += `\n... and ${errors.length - 5} more errors`;
+                }
+            }
+        }
+
+        alert(message);
+
+        // Close modal and reset
+        document.getElementById('bulkImportModal').style.display = 'none';
+        document.getElementById('bulkClassData').value = '';
+
+        // Re-render
         this.renderUnassignedClasses();
         this.renderScheduleGrid();
     }
