@@ -310,10 +310,6 @@ header h1 {
     background-color: #f8f9fa;
     transition: all 0.2s ease;
     position: relative;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: flex-start;
     vertical-align: top;
 }
 
@@ -338,8 +334,11 @@ header h1 {
     font-size: 0.85rem;
     cursor: move;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    flex: 1 1 calc(50% - 0.25rem);
+    display: inline-block;
+    width: calc(50% - 0.5rem);
     min-width: 140px;
+    vertical-align: top;
+    margin-bottom: 0.5rem;
 }
 
 .time-slot .slot-class:hover {
