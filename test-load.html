@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Schedule Load</title>
+    <script>
+        // Test if backward compatibility works
+        const oldSchedule = {
+            "BC 125|Monday|9:25-11:25": 1,
+            "BC 120|Wednesday|9:25-11:25": 1
+        };
+
+        console.log("Old schedule:", oldSchedule);
+
+        // Convert to new format
+        const newSchedule = {};
+        for (let slotKey in oldSchedule) {
+            const value = oldSchedule[slotKey];
+            if (Array.isArray(value)) {
+                newSchedule[slotKey] = value;
+            } else {
+                newSchedule[slotKey] = [value];
+            }
+        }
+
+        console.log("New schedule:", newSchedule);
+        console.log("First slot:", newSchedule["BC 125|Monday|9:25-11:25"]);
+    </script>
+</head>
+<body>
+    <h1>Check browser console (F12)</h1>
+</body>
+</html>
