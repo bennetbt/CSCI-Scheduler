@@ -1582,9 +1582,9 @@ class Scheduler {
                     <tbody>
                         ${data.scheduledSections.map(item => `
                             <tr>
-                                <td>${item.course.code}</td>
+                                <td>${item.displayName}</td>
                                 <td>${item.course.title}</td>
-                                <td>${item.section.sectionNumber}</td>
+                                <td></td>
                                 <td>${item.course.credits || 3}</td>
                                 <td>${item.day}</td>
                                 <td>${item.startTime}</td>
@@ -1706,7 +1706,7 @@ class Scheduler {
 
         // Add all scheduled sections
         data.scheduledSections.forEach(item => {
-            csv += `"${item.course.code}","${item.course.title}","${item.section.sectionNumber}",${item.course.credits || 3},"${item.day}","${item.startTime}","${item.endTime}","${item.building}","${item.roomNumber}","Lecture","${item.section.instructor}",${item.section.enrollment}\n`;
+            csv += `"${item.displayName}","${item.course.title}","",${item.course.credits || 3},"${item.day}","${item.startTime}","${item.endTime}","${item.building}","${item.roomNumber}","Lecture","${item.section.instructor}",${item.section.enrollment}\n`;
         });
 
         // Download CSV
