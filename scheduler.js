@@ -173,12 +173,14 @@ class Scheduler {
         // Setup event listeners
         this.setupEventListeners();
 
-        // Render the UI
-        this.renderScheduleGrid();
-        this.renderCourseCatalog();
+        // Try to load schedule for current semester/year/campus from localStorage
+        this.switchSchedule();
 
-        // Load saved data from server
-        this.loadFromServer();
+        // If no schedule was loaded, render the default UI
+        if (this.courses.length === 0) {
+            this.renderScheduleGrid();
+            this.renderCourseCatalog();
+        }
     }
 
     addSampleCourses() {
@@ -211,19 +213,24 @@ class Scheduler {
             this.showReportsModal();
         });
 
-        // Save button
-        document.getElementById('saveBtn').addEventListener('click', () => {
-            this.saveToServer();
-        });
-
-        // Load button
-        document.getElementById('loadBtn').addEventListener('click', () => {
-            this.loadFromServer();
+        // Manage Schedules button
+        document.getElementById('manageSchedulesBtn').addEventListener('click', () => {
+            this.showManageSchedulesModal();
         });
 
         // Export button
         document.getElementById('exportBtn').addEventListener('click', () => {
             this.exportToJSON();
+        });
+
+        // Import button
+        document.getElementById('importBtn').addEventListener('click', () => {
+            document.getElementById('importFileInput').click();
+        });
+
+        // Import file input
+        document.getElementById('importFileInput').addEventListener('change', (e) => {
+            this.handleImportFile(e);
         });
 
         // Clear button
@@ -235,18 +242,24 @@ class Scheduler {
 
         // Semester, Year, and Campus selectors
         document.getElementById('semesterSelect').addEventListener('change', (e) => {
+            const oldKey = this.getScheduleKey();
+            this.saveCurrentSchedule(); // Save current schedule before switching
             this.semester = e.target.value;
-            this.saveToServer(); // Auto-save when changed
+            this.switchSchedule(); // Load the schedule for the new semester/year/campus
         });
 
         document.getElementById('yearInput').addEventListener('change', (e) => {
+            const oldKey = this.getScheduleKey();
+            this.saveCurrentSchedule(); // Save current schedule before switching
             this.year = parseInt(e.target.value);
-            this.saveToServer(); // Auto-save when changed
+            this.switchSchedule(); // Load the schedule for the new semester/year/campus
         });
 
         document.getElementById('campusSelect').addEventListener('change', (e) => {
+            const oldKey = this.getScheduleKey();
+            this.saveCurrentSchedule(); // Save current schedule before switching
             this.campus = e.target.value;
-            this.saveToServer(); // Auto-save when changed
+            this.switchSchedule(); // Load the schedule for the new semester/year/campus
         });
 
         // Initialize semester/year/campus UI
@@ -321,6 +334,7 @@ class Scheduler {
 
         this.renderScheduleGrid();
         this.renderCourseCatalog();
+        this.saveCurrentSchedule(); // Auto-save after removing course
     }
 
     getCourseById(courseId) {
@@ -344,6 +358,9 @@ class Scheduler {
                 delete this.schedule[slotKey];
             }
         }
+
+        // Auto-save after removing section
+        this.saveCurrentSchedule();
     }
 
     getSectionById(sectionId) {
@@ -640,6 +657,7 @@ class Scheduler {
             if (confirm(`Remove "${displayName}" from ${currentDay} at ${currentTimeBlock}?`)) {
                 this.removeSectionFromSlot(currentRoom, currentDay, currentTimeBlock, section.id);
                 this.renderScheduleGrid();
+                this.renderCourseCatalog(); // Update section counts
             }
         };
         actionsDiv.appendChild(removeBtn);
@@ -791,6 +809,9 @@ class Scheduler {
 
         // Re-render
         this.renderScheduleGrid();
+
+        // Auto-save after copying section
+        this.saveCurrentSchedule();
 
         alert(`"${displayName}" copied to ${targetDay} in ${targetRoom} at ${timeBlock}`);
     }
@@ -985,6 +1006,9 @@ class Scheduler {
         this.addSection(newSection);
         this.assignSectionToSlot(newSection.id, room, day, timeBlock);
 
+        // Auto-save after creating section
+        this.saveCurrentSchedule();
+
         // Check if this is a cross-listed course (4xx7 pattern)
         const crossListedCode = this.generateCrossListedCourseCode(course.code);
         if (crossListedCode) {
@@ -1015,6 +1039,9 @@ class Scheduler {
         // Re-render
         this.renderScheduleGrid();
         this.renderCourseCatalog();
+
+        // Auto-save after creating cross-listed sections
+        this.saveCurrentSchedule();
     }
 
     moveSection(sectionId, targetRoom, targetDay, targetTimeBlock) {
@@ -1072,6 +1099,9 @@ class Scheduler {
 
         // Re-render
         this.renderScheduleGrid();
+
+        // Auto-save after moving section
+        this.saveCurrentSchedule();
     }
 
     showConfigModal() {
@@ -1224,6 +1254,7 @@ class Scheduler {
 
         this.renderScheduleGrid();
         this.renderCourseCatalog();
+        this.saveCurrentSchedule(); // Auto-save after editing section
         alert('Section updated successfully!');
     }
 
@@ -1263,6 +1294,9 @@ class Scheduler {
         // Re-render catalog and schedule grid
         this.renderCourseCatalog();
         this.renderScheduleGrid();
+
+        // Auto-save after adding/editing course
+        this.saveCurrentSchedule();
     }
 
     handleBulkImport() {
@@ -1338,6 +1372,9 @@ class Scheduler {
 
         // Re-render
         this.renderCourseCatalog();
+
+        // Auto-save after bulk import
+        this.saveCurrentSchedule();
     }
 
     handleConfigUpdate() {
@@ -1396,6 +1433,9 @@ class Scheduler {
         // Re-render
         this.renderScheduleGrid();
         this.renderCourseCatalog();
+
+        // Auto-save after config update
+        this.saveCurrentSchedule();
     }
 
     showReportsModal() {
@@ -1805,9 +1845,372 @@ class Scheduler {
     }
 
     clearSchedule() {
+        // Clear all sections from the schedule
+        this.sections = [];
         this.schedule = {};
+
+        // Re-render to update the course catalog counts
         this.renderScheduleGrid();
         this.renderCourseCatalog();
+
+        // Auto-save after clearing
+        this.saveCurrentSchedule();
+    }
+
+    // Multi-schedule management methods
+    getScheduleKey() {
+        // Create a unique key for the current semester/year/campus combination
+        return `${this.semester}-${this.year}-${this.campus}`;
+    }
+
+    saveCurrentSchedule() {
+        // Save current schedule to localStorage
+        const scheduleKey = this.getScheduleKey();
+        const scheduleData = {
+            config: this.config,
+            courses: this.courses,
+            sections: this.sections,
+            schedule: this.schedule,
+            nextCourseId: this.nextCourseId,
+            nextSectionId: this.nextSectionId,
+            semester: this.semester,
+            year: this.year,
+            campus: this.campus,
+            lastModified: new Date().toISOString()
+        };
+
+        try {
+            localStorage.setItem(`schedule_${scheduleKey}`, JSON.stringify(scheduleData));
+            console.log(`Schedule saved: ${scheduleKey}`);
+        } catch (error) {
+            console.error('Error saving schedule to localStorage:', error);
+            alert('Error saving schedule. Storage may be full.');
+        }
+    }
+
+    switchSchedule() {
+        // Load schedule for the current semester/year/campus combination
+        const scheduleKey = this.getScheduleKey();
+        const savedData = localStorage.getItem(`schedule_${scheduleKey}`);
+
+        if (savedData) {
+            try {
+                const data = JSON.parse(savedData);
+                this.loadScheduleData(data);
+                console.log(`Schedule loaded: ${scheduleKey}`);
+            } catch (error) {
+                console.error('Error loading schedule:', error);
+                this.initializeEmptySchedule();
+            }
+        } else {
+            // No schedule exists for this combination, initialize empty
+            console.log(`No schedule found for ${scheduleKey}, initializing empty schedule`);
+            this.initializeEmptySchedule();
+        }
+
+        this.updateScheduleInfoUI();
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+    }
+
+    initializeEmptySchedule() {
+        // Keep the config but reset courses, sections, and schedule
+        this.courses = [];
+        this.sections = [];
+        this.schedule = {};
+        // Don't reset IDs to avoid conflicts
+    }
+
+    loadScheduleData(data) {
+        // Load schedule data from an object
+        if (data.config) {
+            this.config = new ScheduleConfig();
+            this.config.rooms = data.config.rooms || this.config.rooms;
+            this.config.days = data.config.days || this.config.days;
+            this.config.roomOrder = data.config.roomOrder || [...this.config.rooms];
+            this.config.roomCapacities = data.config.roomCapacities || this.config.roomCapacities;
+            this.config.timeBlocksByDay = data.config.timeBlocksByDay || this.config.timeBlocksByDay;
+        }
+
+        if (data.courses && data.sections) {
+            this.courses = data.courses.map(c => new Course(c.id, c.code, c.title, c.credits));
+            this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration));
+            this.nextCourseId = data.nextCourseId || this.nextCourseId;
+            this.nextSectionId = data.nextSectionId || this.nextSectionId;
+        }
+
+        if (data.schedule) {
+            this.schedule = {};
+            for (let slotKey in data.schedule) {
+                const value = data.schedule[slotKey];
+                this.schedule[slotKey] = Array.isArray(value) ? value : [value];
+            }
+        }
+
+        this.semester = data.semester || this.semester;
+        this.year = data.year || this.year;
+        this.campus = data.campus || this.campus;
+    }
+
+    handleImportFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+
+                // Validate the data
+                if (!data.semester || !data.year || !data.campus) {
+                    alert('Invalid schedule file: missing semester, year, or campus information.');
+                    return;
+                }
+
+                // Ask user how to import
+                const options = [
+                    `1. Load into current schedule (${this.semester} ${this.year} - ${this.campus})`,
+                    `2. Load as new schedule (${data.semester} ${data.year} - ${data.campus})`,
+                    `3. Cancel`
+                ].join('\n');
+
+                const choice = prompt(
+                    `Import schedule from:\n${data.semester} ${data.year} - ${data.campus}\n\n` +
+                    `Last modified: ${data.lastModified || data.exportDate || 'Unknown'}\n\n` +
+                    `Choose import option:\n${options}\n\n` +
+                    `Enter 1, 2, or 3:`,
+                    '2'
+                );
+
+                if (choice === '1') {
+                    // Load into current schedule (overwrite)
+                    if (confirm(`This will overwrite your current schedule (${this.semester} ${this.year} - ${this.campus}). Continue?`)) {
+                        // Keep current semester/year/campus, but load the data
+                        const currentSemester = this.semester;
+                        const currentYear = this.year;
+                        const currentCampus = this.campus;
+
+                        this.loadScheduleData(data);
+
+                        // Restore current semester/year/campus
+                        this.semester = currentSemester;
+                        this.year = currentYear;
+                        this.campus = currentCampus;
+
+                        this.saveCurrentSchedule();
+                        this.updateScheduleInfoUI();
+                        this.renderScheduleGrid();
+                        this.renderCourseCatalog();
+                        alert('Schedule imported successfully into current slot!');
+                    }
+                } else if (choice === '2') {
+                    // Load as new schedule (use the semester/year/campus from the file)
+                    const targetKey = `${data.semester}-${data.year}-${data.campus}`;
+                    const existing = localStorage.getItem(`schedule_${targetKey}`);
+
+                    if (existing) {
+                        if (!confirm(`A schedule already exists for ${data.semester} ${data.year} - ${data.campus}. Overwrite it?`)) {
+                            return;
+                        }
+                    }
+
+                    // Save current schedule first
+                    this.saveCurrentSchedule();
+
+                    // Load the imported data
+                    this.loadScheduleData(data);
+                    this.saveCurrentSchedule();
+                    this.updateScheduleInfoUI();
+                    this.renderScheduleGrid();
+                    this.renderCourseCatalog();
+                    alert(`Schedule imported successfully as ${data.semester} ${data.year} - ${data.campus}!`);
+                }
+            } catch (error) {
+                console.error('Error importing schedule:', error);
+                alert('Error importing schedule file. Please check the file format.');
+            }
+
+            // Reset file input
+            event.target.value = '';
+        };
+
+        reader.readAsText(file);
+    }
+
+    getAllSchedules() {
+        // Get all saved schedules from localStorage
+        const schedules = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('schedule_')) {
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    const scheduleKey = key.replace('schedule_', '');
+                    schedules.push({
+                        key: scheduleKey,
+                        semester: data.semester,
+                        year: data.year,
+                        campus: data.campus,
+                        lastModified: data.lastModified || 'Unknown',
+                        courseCount: data.courses ? data.courses.length : 0,
+                        sectionCount: data.sections ? data.sections.length : 0
+                    });
+                } catch (error) {
+                    console.error(`Error parsing schedule ${key}:`, error);
+                }
+            }
+        }
+
+        // Sort by year and semester
+        const semesterOrder = { 'Spring': 1, 'Summer': 2, 'Fall': 3 };
+        schedules.sort((a, b) => {
+            if (b.year !== a.year) return b.year - a.year;
+            return (semesterOrder[b.semester] || 0) - (semesterOrder[a.semester] || 0);
+        });
+
+        return schedules;
+    }
+
+    showManageSchedulesModal() {
+        // Show current schedule info
+        document.getElementById('currentScheduleInfo').textContent =
+            `${this.semester} ${this.year} - ${this.campus}`;
+
+        // Populate schedules list
+        this.renderSchedulesList();
+
+        // Setup event listeners for the modal
+        document.getElementById('refreshSchedulesList').onclick = () => this.renderSchedulesList();
+        document.getElementById('exportCurrentSchedule').onclick = () => this.exportToJSON();
+        document.getElementById('importScheduleFile').onclick = () => {
+            document.getElementById('importFileInput').click();
+        };
+
+        this.showModal('manageSchedulesModal');
+    }
+
+    renderSchedulesList() {
+        const container = document.getElementById('schedulesList');
+        const schedules = this.getAllSchedules();
+        const currentKey = this.getScheduleKey();
+
+        if (schedules.length === 0) {
+            container.innerHTML = '<p class="empty-state">No saved schedules found.</p>';
+            return;
+        }
+
+        let html = '<table class="report-table"><thead><tr>';
+        html += '<th>Semester</th><th>Year</th><th>Campus</th>';
+        html += '<th>Courses</th><th>Sections</th><th>Last Modified</th><th>Actions</th>';
+        html += '</tr></thead><tbody>';
+
+        schedules.forEach(schedule => {
+            const isCurrent = schedule.key === currentKey;
+            const rowClass = isCurrent ? 'style="background-color: rgba(255, 199, 44, 0.2);"' : '';
+
+            html += `<tr ${rowClass}>`;
+            html += `<td><strong>${schedule.semester}</strong> ${isCurrent ? '(Current)' : ''}</td>`;
+            html += `<td>${schedule.year}</td>`;
+            html += `<td>${schedule.campus}</td>`;
+            html += `<td>${schedule.courseCount}</td>`;
+            html += `<td>${schedule.sectionCount}</td>`;
+            html += `<td>${new Date(schedule.lastModified).toLocaleString()}</td>`;
+            html += '<td>';
+
+            if (!isCurrent) {
+                html += `<button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;" onclick="scheduler.loadScheduleByKey('${schedule.key}')">Load</button> `;
+            }
+
+            html += `<button class="btn btn-success" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;" onclick="scheduler.exportScheduleByKey('${schedule.key}')">Export</button> `;
+            html += `<button class="btn btn-danger" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;" onclick="scheduler.deleteSchedule('${schedule.key}')">Delete</button>`;
+            html += '</td></tr>';
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    loadScheduleByKey(scheduleKey) {
+        const savedData = localStorage.getItem(`schedule_${scheduleKey}`);
+        if (!savedData) {
+            alert('Schedule not found!');
+            return;
+        }
+
+        try {
+            // Save current schedule first
+            this.saveCurrentSchedule();
+
+            // Load the selected schedule
+            const data = JSON.parse(savedData);
+            this.loadScheduleData(data);
+
+            this.updateScheduleInfoUI();
+            this.renderScheduleGrid();
+            this.renderCourseCatalog();
+
+            // Close modal
+            document.getElementById('manageSchedulesModal').style.display = 'none';
+
+            alert(`Loaded schedule: ${this.semester} ${this.year} - ${this.campus}`);
+        } catch (error) {
+            console.error('Error loading schedule:', error);
+            alert('Error loading schedule.');
+        }
+    }
+
+    exportScheduleByKey(scheduleKey) {
+        const savedData = localStorage.getItem(`schedule_${scheduleKey}`);
+        if (!savedData) {
+            alert('Schedule not found!');
+            return;
+        }
+
+        try {
+            const data = JSON.parse(savedData);
+            const dataStr = JSON.stringify(data, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `schedule-${data.semester}-${data.year}-${data.campus.replace(/\s+/g, '-')}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            alert(`Exported: ${data.semester} ${data.year} - ${data.campus}`);
+        } catch (error) {
+            console.error('Error exporting schedule:', error);
+            alert('Error exporting schedule.');
+        }
+    }
+
+    deleteSchedule(scheduleKey) {
+        const currentKey = this.getScheduleKey();
+        if (scheduleKey === currentKey) {
+            alert('Cannot delete the currently active schedule. Switch to a different schedule first.');
+            return;
+        }
+
+        const savedData = localStorage.getItem(`schedule_${scheduleKey}`);
+        if (!savedData) {
+            alert('Schedule not found!');
+            return;
+        }
+
+        try {
+            const data = JSON.parse(savedData);
+            if (confirm(`Delete schedule for ${data.semester} ${data.year} - ${data.campus}?\n\nThis cannot be undone.`)) {
+                localStorage.removeItem(`schedule_${scheduleKey}`);
+                this.renderSchedulesList();
+                alert('Schedule deleted.');
+            }
+        } catch (error) {
+            console.error('Error deleting schedule:', error);
+            alert('Error deleting schedule.');
+        }
     }
 
     async saveToServer() {
