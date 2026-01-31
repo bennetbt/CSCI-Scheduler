@@ -208,6 +208,11 @@ class Scheduler {
             this.showConfigModal();
         });
 
+        // Sync Catalog button
+        document.getElementById('syncBtn').addEventListener('click', () => {
+            this.syncCatalog();
+        });
+
         // Reports button
         document.getElementById('reportsBtn').addEventListener('click', () => {
             this.showReportsModal();
@@ -1855,6 +1860,92 @@ class Scheduler {
 
         // Auto-save after clearing
         this.saveCurrentSchedule();
+    }
+
+    syncCatalog() {
+        // Synchronize course catalog with schedule data
+        let orphanedEntries = 0;
+        let fixedEntries = 0;
+
+        // Check for orphaned schedule entries (sections that don't exist)
+        const validSchedule = {};
+        for (let slotKey in this.schedule) {
+            const sectionIds = this.schedule[slotKey] || [];
+            const validSectionIds = sectionIds.filter(sectionId => {
+                const section = this.getSectionById(sectionId);
+                if (!section) {
+                    orphanedEntries++;
+                    return false;
+                }
+
+                // Also verify the course exists
+                const course = this.getCourseById(section.courseId);
+                if (!course) {
+                    orphanedEntries++;
+                    return false;
+                }
+
+                return true;
+            });
+
+            if (validSectionIds.length > 0) {
+                validSchedule[slotKey] = validSectionIds;
+            } else if (sectionIds.length > 0) {
+                // This slot had invalid entries that were removed
+                fixedEntries++;
+            }
+        }
+
+        // Update schedule with cleaned data
+        this.schedule = validSchedule;
+
+        // Check for sections that reference non-existent courses
+        const validSections = this.sections.filter(section => {
+            const course = this.getCourseById(section.courseId);
+            if (!course) {
+                orphanedEntries++;
+                return false;
+            }
+            return true;
+        });
+
+        if (validSections.length !== this.sections.length) {
+            this.sections = validSections;
+            fixedEntries++;
+        }
+
+        // Re-render everything to refresh counts
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+
+        // Save the cleaned data
+        if (orphanedEntries > 0 || fixedEntries > 0) {
+            this.saveCurrentSchedule();
+        }
+
+        // Provide feedback
+        let message = 'Catalog synchronized successfully!\n\n';
+        message += `Total courses: ${this.courses.length}\n`;
+        message += `Total sections: ${this.sections.length}\n`;
+
+        const scheduledCount = Object.keys(this.schedule).reduce((count, slotKey) => {
+            return count + (this.schedule[slotKey] || []).length;
+        }, 0);
+        message += `Scheduled instances: ${scheduledCount}\n`;
+
+        if (orphanedEntries > 0) {
+            message += `\n⚠️ Cleaned ${orphanedEntries} orphaned entries`;
+        }
+
+        if (fixedEntries > 0) {
+            message += `\n✓ Fixed ${fixedEntries} schedule slots`;
+        }
+
+        if (orphanedEntries === 0 && fixedEntries === 0) {
+            message += '\n✓ No issues found - data is clean';
+        }
+
+        alert(message);
     }
 
     // Multi-schedule management methods
