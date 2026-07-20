@@ -1916,41 +1916,61 @@ class Scheduler {
         return days;
     }
 
-    parseTime(timeString) {
-        // Parse "8:00 AM", "12:30 PM" etc. to standardized format
-        if (!timeString || typeof timeString !== 'string') {
-            throw new Error('Invalid time string');
+    parseTime(timeValue) {
+        // Handle both Excel decimal time format and text time strings
+        // Excel time: 0.333333 = 8:00 AM, 0.5 = 12:00 PM
+        // Text time: "8:00 AM", "12:30 PM"
+
+        if (timeValue === null || timeValue === undefined) {
+            throw new Error('Invalid time value');
         }
 
-        const trimmed = timeString.trim();
+        let hours24, minutes;
 
-        // Match patterns like "8:00 AM", "12:30 PM", "8:00AM", etc.
-        const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        // Check if it's a number (Excel decimal time format)
+        if (typeof timeValue === 'number') {
+            // Excel stores times as fractions of a day
+            // 0.5 = 12 hours = noon
+            const totalMinutes = Math.round(timeValue * 24 * 60);
+            hours24 = Math.floor(totalMinutes / 60);
+            minutes = totalMinutes % 60;
+        } else if (typeof timeValue === 'string') {
+            // Try to parse as text time
+            const trimmed = timeValue.trim();
 
-        if (!match) {
-            throw new Error(`Cannot parse time: ${timeString}`);
-        }
+            // Match patterns like "8:00 AM", "12:30 PM", "8:00AM", etc.
+            const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
 
-        let hours = parseInt(match[1]);
-        const minutes = match[2];
-        const meridiem = match[3].toUpperCase();
+            if (!match) {
+                throw new Error(`Cannot parse time: ${timeValue}`);
+            }
 
-        // Convert to 24-hour for sorting/comparison
-        if (meridiem === 'PM' && hours !== 12) {
-            hours += 12;
-        } else if (meridiem === 'AM' && hours === 12) {
-            hours = 0;
+            let hrs = parseInt(match[1]);
+            minutes = parseInt(match[2]);
+            const meridiem = match[3].toUpperCase();
+
+            // Convert to 24-hour for sorting/comparison
+            if (meridiem === 'PM' && hrs !== 12) {
+                hours24 = hrs + 12;
+            } else if (meridiem === 'AM' && hrs === 12) {
+                hours24 = 0;
+            } else {
+                hours24 = hrs;
+            }
+        } else {
+            throw new Error(`Invalid time value type: ${typeof timeValue}`);
         }
 
         // Return standardized 12-hour format for display
-        const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
-        const displayMeridiem = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours24 > 12 ? hours24 - 12 : (hours24 === 0 ? 12 : hours24);
+        const displayMeridiem = hours24 >= 12 ? 'PM' : 'AM';
+        const displayMinutes = minutes.toString().padStart(2, '0');
 
         return {
-            display: `${displayHours}:${minutes} ${displayMeridiem}`,
-            hours24: hours,
-            minutes: parseInt(minutes),
-            totalMinutes: hours * 60 + parseInt(minutes)
+            display: `${displayHours}:${displayMinutes} ${displayMeridiem}`,
+            hours24: hours24,
+            minutes: minutes,
+            totalMinutes: hours24 * 60 + minutes
         };
     }
 
