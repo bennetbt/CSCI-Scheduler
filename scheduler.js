@@ -1138,7 +1138,7 @@ class Scheduler {
             return;
         }
 
-        // Check for faculty conflicts
+        // Check for faculty conflicts (warning only, don't block)
         if (instructorName !== 'TBD') {
             const conflictCheck = this.checkFacultyConflict(instructorName, day, blockIndex, blockSpan);
             if (conflictCheck.conflict) {
@@ -1146,13 +1146,18 @@ class Scheduler {
                 const conflictSection = conflictCheck.conflictingSection;
                 const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
 
-                const shouldContinue = confirm(
-                    `Faculty Conflict Warning!\n\n` +
+                console.warn(
+                    `Faculty Conflict: ${instructorName} is already teaching "${conflictDisplayName}" ` +
+                    `in ${conflictCheck.conflictingRoom} at this time.`
+                );
+
+                // Show warning but don't block
+                alert(
+                    `⚠️ Faculty Conflict Warning\n\n` +
                     `${instructorName} is already teaching "${conflictDisplayName}" ` +
                     `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
-                    `Continue anyway?`
+                    `Section will be created anyway.`
                 );
-                if (!shouldContinue) return;
             }
         }
 
@@ -1219,7 +1224,7 @@ class Scheduler {
         const existingPlacements = this.getPlacementsForSection(sectionId);
         const blockSpan = existingPlacements.length > 0 ? existingPlacements[0].blockSpan : 5; // Default to 50 minutes (5 blocks)
 
-        // Check for faculty conflicts
+        // Check for faculty conflicts (warning only, don't block)
         const conflictCheck = this.checkFacultyConflict(
             section.instructor,
             targetDay,
@@ -1233,13 +1238,18 @@ class Scheduler {
             const conflictSection = conflictCheck.conflictingSection;
             const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
 
+            console.warn(
+                `Faculty Conflict: ${section.instructor} is already teaching "${conflictDisplayName}" ` +
+                `in ${conflictCheck.conflictingRoom} at this time.`
+            );
+
+            // Show warning but don't block the move
             alert(
-                `Faculty Conflict!\n\n` +
+                `⚠️ Faculty Conflict Warning\n\n` +
                 `${section.instructor} is already teaching "${conflictDisplayName}" ` +
                 `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
-                `Please choose a different time slot.`
+                `Section will be moved anyway.`
             );
-            return;
         }
 
         // Update enrollment if room changed
@@ -1373,32 +1383,38 @@ class Scheduler {
 
         const instructorName = newInstructor.trim() || 'TBD';
 
-        // Check for faculty conflicts if instructor changed
+        // Check for faculty conflicts if instructor changed (warning only, don't block)
         if (instructorName !== section.instructor && instructorName !== 'TBD') {
             // Find where this section is scheduled
-            let room = null, day = null, timeBlock = null;
-            for (let slotKey in this.schedule) {
-                const sectionIds = this.schedule[slotKey] || [];
-                if (sectionIds.includes(sectionId)) {
-                    [room, day, timeBlock] = slotKey.split('|');
-                    break;
-                }
-            }
+            const placements = this.getPlacementsForSection(sectionId);
 
-            if (room && day && timeBlock) {
-                const conflictCheck = this.checkFacultyConflict(instructorName, day, timeBlock, sectionId);
+            if (placements.length > 0) {
+                const placement = placements[0]; // Check first placement
+                const conflictCheck = this.checkFacultyConflict(
+                    instructorName,
+                    placement.day,
+                    placement.startBlockIndex,
+                    placement.blockSpan,
+                    sectionId
+                );
+
                 if (conflictCheck.conflict) {
                     const conflictCourse = conflictCheck.conflictingCourse;
                     const conflictSection = conflictCheck.conflictingSection;
                     const conflictDisplayName = conflictSection.getDisplayName(conflictCourse.code);
 
-                    const shouldContinue = confirm(
-                        `Faculty Conflict Warning!\n\n` +
+                    console.warn(
+                        `Faculty Conflict: ${instructorName} is already teaching "${conflictDisplayName}" ` +
+                        `in ${conflictCheck.conflictingRoom} at this time.`
+                    );
+
+                    // Show warning but don't block the edit
+                    alert(
+                        `⚠️ Faculty Conflict Warning\n\n` +
                         `${instructorName} is already teaching "${conflictDisplayName}" ` +
                         `in ${conflictCheck.conflictingRoom} at this time.\n\n` +
-                        `Continue anyway?`
+                        `Section will be updated anyway.`
                     );
-                    if (!shouldContinue) return;
                 }
             }
         }
