@@ -481,6 +481,13 @@ header h1 {
     opacity: 0.9;
 }
 
+.time-slot .slot-class .time-display {
+    font-size: 0.7rem;
+    color: var(--etsu-gold-light);
+    font-weight: 600;
+    margin: 0.2rem 0;
+}
+
 /* Action buttons for scheduled classes */
 .slot-actions {
     display: flex;

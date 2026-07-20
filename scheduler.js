@@ -37,62 +37,72 @@ class ScheduleConfig {
             'Lab B': 25
         };
         this.days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-        // Time blocks per day - each day can have different time blocks
-        this.timeBlocksByDay = {
-            'Monday': [
-                '8:00 AM - 9:15 AM',
-                '9:30 AM - 10:45 AM',
-                '11:00 AM - 12:15 PM',
-                '12:30 PM - 1:45 PM',
-                '2:00 PM - 3:15 PM',
-                '3:30 PM - 4:45 PM'
-            ],
-            'Tuesday': [
-                '8:00 AM - 9:15 AM',
-                '9:30 AM - 10:45 AM',
-                '11:00 AM - 12:15 PM',
-                '12:30 PM - 1:45 PM',
-                '2:00 PM - 3:15 PM',
-                '3:30 PM - 4:45 PM'
-            ],
-            'Wednesday': [
-                '8:00 AM - 9:15 AM',
-                '9:30 AM - 10:45 AM',
-                '11:00 AM - 12:15 PM',
-                '12:30 PM - 1:45 PM',
-                '2:00 PM - 3:15 PM',
-                '3:30 PM - 4:45 PM'
-            ],
-            'Thursday': [
-                '8:00 AM - 9:15 AM',
-                '9:30 AM - 10:45 AM',
-                '11:00 AM - 12:15 PM',
-                '12:30 PM - 1:45 PM',
-                '2:00 PM - 3:15 PM',
-                '3:30 PM - 4:45 PM'
-            ],
-            'Friday': [
-                '8:00 AM - 9:15 AM',
-                '9:30 AM - 10:45 AM',
-                '11:00 AM - 12:15 PM',
-                '12:30 PM - 1:45 PM',
-                '2:00 PM - 3:15 PM',
-                '3:30 PM - 4:45 PM'
-            ]
-        };
+
+        // Fixed 15-minute time grid
+        this.gridStartHour = 8; // 8:00 AM
+        this.gridStartMinute = 0;
+        this.gridEndHour = 17; // 5:00 PM
+        this.gridEndMinute = 0;
+        this.gridIntervalMinutes = 15;
+
+        // Generate time blocks
+        this.timeBlocks = this.generateTimeBlocks();
+    }
+
+    generateTimeBlocks() {
+        const blocks = [];
+        let currentMinutes = this.gridStartHour * 60 + this.gridStartMinute;
+        const endMinutes = this.gridEndHour * 60 + this.gridEndMinute;
+
+        while (currentMinutes < endMinutes) {
+            const hours = Math.floor(currentMinutes / 60);
+            const mins = currentMinutes % 60;
+            const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
+            const meridiem = hours >= 12 ? 'PM' : 'AM';
+            const timeLabel = `${displayHours}:${mins.toString().padStart(2, '0')} ${meridiem}`;
+
+            blocks.push({
+                label: timeLabel,
+                startMinutes: currentMinutes,
+                hours24: hours,
+                minutes: mins
+            });
+
+            currentMinutes += this.gridIntervalMinutes;
+        }
+
+        return blocks;
     }
 
     getTimeBlocksForDay(day) {
-        return this.timeBlocksByDay[day] || [];
+        // All days use the same fixed time grid
+        return this.timeBlocks;
     }
 
     getAllUniqueTimeBlocks() {
-        const allBlocks = new Set();
-        for (let day of this.days) {
-            const blocks = this.getTimeBlocksForDay(day);
-            blocks.forEach(block => allBlocks.add(block));
+        return this.timeBlocks;
+    }
+
+    // Find the closest time block index for a given time
+    findClosestTimeBlock(hours24, minutes) {
+        const targetMinutes = hours24 * 60 + minutes;
+        let closestIndex = 0;
+        let closestDiff = Math.abs(this.timeBlocks[0].startMinutes - targetMinutes);
+
+        for (let i = 1; i < this.timeBlocks.length; i++) {
+            const diff = Math.abs(this.timeBlocks[i].startMinutes - targetMinutes);
+            if (diff < closestDiff) {
+                closestDiff = diff;
+                closestIndex = i;
+            }
         }
-        return Array.from(allBlocks);
+
+        return closestIndex;
+    }
+
+    // Calculate how many grid blocks a duration spans
+    calculateBlockSpan(durationMinutes) {
+        return Math.max(1, Math.round(durationMinutes / this.gridIntervalMinutes));
     }
 
     getRoomCapacity(room) {
@@ -151,9 +161,11 @@ class Scheduler {
         this.config = new ScheduleConfig();
         this.courses = []; // Course catalog
         this.sections = []; // Scheduled sections
-        this.schedule = {}; // Map of slot IDs to section IDs
+        // New schedule structure: array of placement objects
+        this.schedulePlacements = []; // {sectionId, room, day, startBlockIndex, blockSpan}
         this.nextCourseId = 1;
         this.nextSectionId = 1;
+        this.nextPlacementId = 1;
         this.draggedElement = null;
         this.draggedCourseId = null; // For dragging from catalog
         this.draggedSectionId = null; // For dragging scheduled sections
@@ -402,40 +414,69 @@ class Scheduler {
         return this.sections.filter(s => s.courseId === courseId);
     }
 
-    getSlotKey(room, day, timeBlock) {
-        return `${room}|${day}|${timeBlock}`;
+    // Add a section to the schedule at a specific time slot
+    addPlacement(sectionId, room, day, startBlockIndex, blockSpan) {
+        const placement = {
+            id: this.nextPlacementId++,
+            sectionId,
+            room,
+            day,
+            startBlockIndex,
+            blockSpan
+        };
+        this.schedulePlacements.push(placement);
+        return placement;
     }
 
-    assignSectionToSlot(sectionId, room, day, timeBlock) {
-        const slotKey = this.getSlotKey(room, day, timeBlock);
-        if (!this.schedule[slotKey]) {
-            this.schedule[slotKey] = [];
-        }
-        if (!this.schedule[slotKey].includes(sectionId)) {
-            this.schedule[slotKey].push(sectionId);
-        }
+    // Remove a placement by ID
+    removePlacement(placementId) {
+        this.schedulePlacements = this.schedulePlacements.filter(p => p.id !== placementId);
     }
 
-    removeSectionFromSlot(room, day, timeBlock, sectionId = null) {
-        const slotKey = this.getSlotKey(room, day, timeBlock);
-        if (sectionId) {
-            // Remove specific section
-            if (this.schedule[slotKey]) {
-                this.schedule[slotKey] = this.schedule[slotKey].filter(id => id !== sectionId);
-                if (this.schedule[slotKey].length === 0) {
-                    delete this.schedule[slotKey];
-                }
-            }
-        } else {
-            // Remove all sections from slot
-            delete this.schedule[slotKey];
-        }
+    // Remove all placements for a section
+    removeSectionPlacements(sectionId) {
+        this.schedulePlacements = this.schedulePlacements.filter(p => p.sectionId !== sectionId);
     }
 
-    getSectionsInSlot(room, day, timeBlock) {
-        const slotKey = this.getSlotKey(room, day, timeBlock);
-        const sectionIds = this.schedule[slotKey] || [];
+    // Remove all placements for a section on a specific day
+    removeSectionPlacementsOnDay(sectionId, day) {
+        this.schedulePlacements = this.schedulePlacements.filter(p =>
+            !(p.sectionId === sectionId && p.day === day)
+        );
+    }
+
+    // Get all placements in a specific time block
+    getPlacementsInBlock(room, day, blockIndex) {
+        return this.schedulePlacements.filter(p => {
+            if (p.room !== room || p.day !== day) return false;
+            // Check if this block is within the placement's span
+            return blockIndex >= p.startBlockIndex &&
+                   blockIndex < (p.startBlockIndex + p.blockSpan);
+        });
+    }
+
+    // Get sections in a specific time block
+    getSectionsInSlot(room, day, blockIndex) {
+        const placements = this.getPlacementsInBlock(room, day, blockIndex);
+        const sectionIds = [...new Set(placements.map(p => p.sectionId))];
         return sectionIds.map(id => this.getSectionById(id)).filter(s => s !== undefined);
+    }
+
+    // Get all placements for a section
+    getPlacementsForSection(sectionId) {
+        return this.schedulePlacements.filter(p => p.sectionId === sectionId);
+    }
+
+    // Backward compatibility: assignSectionToSlot with time in hours/minutes
+    assignSectionToSlot(sectionId, room, day, startHours, startMinutes, endHours, endMinutes) {
+        // Find closest start block
+        const startBlockIndex = this.config.findClosestTimeBlock(startHours, startMinutes);
+
+        // Calculate duration and span
+        const durationMinutes = (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
+        const blockSpan = this.config.calculateBlockSpan(durationMinutes);
+
+        return this.addPlacement(sectionId, room, day, startBlockIndex, blockSpan);
     }
 
     isCrossListedPair(courseCode) {
@@ -574,39 +615,71 @@ class Scheduler {
             });
             table.appendChild(roomHeaderRow);
 
-            // Time blocks rows for this specific day
+            // Time blocks rows - 15-minute increments
             const timeBlocks = this.config.getTimeBlocksForDay(day);
-            timeBlocks.forEach(timeBlock => {
+            const renderedPlacements = new Set(); // Track which placements we've already rendered
+
+            timeBlocks.forEach((timeBlock, blockIndex) => {
                 const row = document.createElement('tr');
 
                 // Time label
                 const timeCell = document.createElement('th');
                 timeCell.className = 'time-header';
-                timeCell.textContent = timeBlock;
+                timeCell.textContent = timeBlock.label;
                 row.appendChild(timeCell);
 
                 // Room slots (in the configured order)
                 this.config.roomOrder.forEach(room => {
-                    const slot = document.createElement('td');
-                    slot.className = 'time-slot';
-                    slot.dataset.room = room;
-                    slot.dataset.day = day;
-                    slot.dataset.timeBlock = timeBlock;
+                    // Find placements that start at this block
+                    const placementsStartingHere = this.schedulePlacements.filter(p =>
+                        p.room === room && p.day === day && p.startBlockIndex === blockIndex
+                    );
 
-                    // Check if there are sections scheduled
-                    const scheduledSections = this.getSectionsInSlot(room, day, timeBlock);
-                    if (scheduledSections.length > 0) {
-                        slot.classList.add('occupied');
-                        scheduledSections.forEach(section => {
-                            const sectionDiv = this.createScheduledSectionElement(section, room, day, timeBlock);
-                            slot.appendChild(sectionDiv);
+                    // Find placements that are spanning through this block
+                    const placementsSpanningHere = this.schedulePlacements.filter(p =>
+                        p.room === room && p.day === day &&
+                        blockIndex > p.startBlockIndex &&
+                        blockIndex < (p.startBlockIndex + p.blockSpan) &&
+                        !renderedPlacements.has(p.id)
+                    );
+
+                    if (placementsStartingHere.length > 0) {
+                        // Create cell with section(s) that start here
+                        placementsStartingHere.forEach(placement => {
+                            const slot = document.createElement('td');
+                            slot.className = 'time-slot occupied';
+                            slot.rowSpan = placement.blockSpan;
+                            slot.dataset.room = room;
+                            slot.dataset.day = day;
+                            slot.dataset.blockIndex = blockIndex;
+                            slot.dataset.placementId = placement.id;
+
+                            const section = this.getSectionById(placement.sectionId);
+                            if (section) {
+                                const sectionDiv = this.createScheduledSectionElement(placement, section, room, day);
+                                slot.appendChild(sectionDiv);
+                            }
+
+                            // Make slot a drop target
+                            this.makeDropTarget(slot);
+
+                            row.appendChild(slot);
+                            renderedPlacements.add(placement.id);
                         });
+                    } else if (placementsSpanningHere.length === 0) {
+                        // Empty slot - no section starting or spanning here
+                        const slot = document.createElement('td');
+                        slot.className = 'time-slot';
+                        slot.dataset.room = room;
+                        slot.dataset.day = day;
+                        slot.dataset.blockIndex = blockIndex;
+
+                        // Make slot a drop target
+                        this.makeDropTarget(slot);
+
+                        row.appendChild(slot);
                     }
-
-                    // Make slot a drop target
-                    this.makeDropTarget(slot);
-
-                    row.appendChild(slot);
+                    // If placementsSpanningHere.length > 0, we don't create a cell (it's covered by rowSpan)
                 });
 
                 table.appendChild(row);
@@ -632,7 +705,7 @@ class Scheduler {
         }
     }
 
-    createScheduledSectionElement(section, currentRoom, currentDay, currentTimeBlock) {
+    createScheduledSectionElement(placement, section, currentRoom, currentDay) {
         const course = this.getCourseById(section.courseId);
         if (!course) return document.createElement('div');
 
@@ -640,6 +713,7 @@ class Scheduler {
         div.className = 'slot-class';
         div.draggable = true;
         div.dataset.sectionId = section.id;
+        div.dataset.placementId = placement.id;
 
         // Get all days this section is scheduled on
         const scheduledDays = this.getScheduledDaysForSection(section.id);
@@ -648,10 +722,17 @@ class Scheduler {
 
         const displayName = section.getDisplayName(course.code);
 
+        // Calculate time display
+        const startBlock = this.config.timeBlocks[placement.startBlockIndex];
+        const endBlockIndex = placement.startBlockIndex + placement.blockSpan;
+        const endBlock = this.config.timeBlocks[Math.min(endBlockIndex, this.config.timeBlocks.length - 1)];
+        const timeDisplay = startBlock && endBlock ? `${startBlock.label} - ${endBlock.label}` : '';
+
         div.innerHTML = `
             ${multiDayIndicator}
             <h4>${displayName}</h4>
             <p>${section.instructor}</p>
+            <p class="time-display">${timeDisplay}</p>
             <p>${section.enrollment} students</p>
         `;
 
@@ -675,10 +756,11 @@ class Scheduler {
         removeBtn.className = 'slot-remove-btn';
         removeBtn.onclick = (e) => {
             e.stopPropagation();
-            if (confirm(`Remove "${displayName}" from ${currentDay} at ${currentTimeBlock}?`)) {
-                this.removeSectionFromSlot(currentRoom, currentDay, currentTimeBlock, section.id);
+            if (confirm(`Remove "${displayName}" from ${currentDay}?`)) {
+                this.removePlacement(placement.id);
                 this.renderScheduleGrid();
                 this.renderCourseCatalog(); // Update section counts
+                this.saveCurrentSchedule();
             }
         };
         actionsDiv.appendChild(removeBtn);
@@ -698,7 +780,7 @@ class Scheduler {
             btn.className = 'quick-copy-btn';
             btn.onclick = (e) => {
                 e.stopPropagation();
-                this.copySectionToDay(section.id, currentRoom, currentDay, currentTimeBlock, targetDay);
+                this.copyPlacementToDay(placement, targetDay);
             };
             quickCopyDiv.appendChild(btn);
         });
@@ -713,17 +795,42 @@ class Scheduler {
 
     getScheduledDaysForSection(sectionId) {
         const days = new Set();
-        for (let slotKey in this.schedule) {
-            const sectionIds = this.schedule[slotKey] || [];
-            if (sectionIds.includes(sectionId)) {
-                const [room, day, timeBlock] = slotKey.split('|');
-                days.add(day);
+        this.schedulePlacements.forEach(p => {
+            if (p.sectionId === sectionId) {
+                days.add(p.day);
             }
-        }
+        });
         return Array.from(days).sort((a, b) => {
             const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
             return (dayOrder[a] || 99) - (dayOrder[b] || 99);
         });
+    }
+
+    copyPlacementToDay(placement, targetDay) {
+        // Check if already scheduled on target day
+        const existing = this.schedulePlacements.find(p =>
+            p.sectionId === placement.sectionId &&
+            p.day === targetDay &&
+            p.room === placement.room
+        );
+
+        if (existing) {
+            alert(`This section is already scheduled on ${targetDay}`);
+            return;
+        }
+
+        // Copy the placement
+        this.addPlacement(
+            placement.sectionId,
+            placement.room,
+            targetDay,
+            placement.startBlockIndex,
+            placement.blockSpan
+        );
+
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+        this.saveCurrentSchedule();
     }
 
     getQuickCopyDays(currentDay) {
@@ -2161,27 +2268,28 @@ class Scheduler {
                         // Ensure day exists in config
                         if (!this.config.days.includes(day)) {
                             this.config.days.push(day);
-                            this.config.timeBlocksByDay[day] = [];
                         }
 
-                        // Match or create time block
-                        const timeBlock = this.matchOrCreateTimeBlock(
-                            row['Start Time'],
-                            row['End Time'],
-                            day,
-                            true
-                        );
+                        // Parse start and end times
+                        const startTime = this.parseTime(row['Start Time']);
+                        const endTime = this.parseTime(row['End Time']);
 
-                        if (!this.config.timeBlocksByDay[day].includes(timeBlock)) {
-                            results.timeBlocksCreated.add(`${day}: ${timeBlock}`);
-                        }
+                        // Find closest grid block for start time
+                        const startBlockIndex = this.config.findClosestTimeBlock(startTime.hours24, startTime.minutes);
 
-                        // Create schedule entry
+                        // Calculate duration in minutes
+                        const durationMinutes = endTime.totalMinutes - startTime.totalMinutes;
+
+                        // Calculate how many grid blocks this spans
+                        const blockSpan = this.config.calculateBlockSpan(durationMinutes);
+
+                        // Create schedule entry with grid positioning
                         results.scheduleEntries.push({
                             sectionId: section.id,
                             room: room,
                             day: day,
-                            timeBlock: timeBlock
+                            startBlockIndex: startBlockIndex,
+                            blockSpan: blockSpan
                         });
 
                     } catch (error) {
@@ -2321,7 +2429,7 @@ class Scheduler {
         if (options.clearExisting) {
             this.courses = [];
             this.sections = [];
-            this.schedule = {};
+            this.schedulePlacements = [];
         }
 
         // Add courses
@@ -2334,13 +2442,14 @@ class Scheduler {
             this.addSection(section);
         });
 
-        // Add schedule entries
+        // Add schedule placements
         results.scheduleEntries.forEach(entry => {
-            this.assignSectionToSlot(
+            this.addPlacement(
                 entry.sectionId,
                 entry.room,
                 entry.day,
-                entry.timeBlock
+                entry.startBlockIndex,
+                entry.blockSpan
             );
         });
 
@@ -2389,7 +2498,7 @@ class Scheduler {
     clearSchedule() {
         // Clear all sections from the schedule
         this.sections = [];
-        this.schedule = {};
+        this.schedulePlacements = [];
 
         // Re-render to update the course catalog counts
         this.renderScheduleGrid();
@@ -2567,11 +2676,20 @@ class Scheduler {
             this.nextSectionId = data.nextSectionId || this.nextSectionId;
         }
 
-        if (data.schedule) {
-            this.schedule = {};
+        // Load schedule placements (new format)
+        if (data.schedulePlacements) {
+            this.schedulePlacements = data.schedulePlacements;
+            this.nextPlacementId = Math.max(...this.schedulePlacements.map(p => p.id), 0) + 1;
+        } else if (data.schedule) {
+            // Migrate old format - not fully supported, will lose time information
+            // Best effort: place at first available slot
+            this.schedulePlacements = [];
             for (let slotKey in data.schedule) {
-                const value = data.schedule[slotKey];
-                this.schedule[slotKey] = Array.isArray(value) ? value : [value];
+                const sectionIds = Array.isArray(data.schedule[slotKey]) ? data.schedule[slotKey] : [data.schedule[slotKey]];
+                sectionIds.forEach(sectionId => {
+                    // Place at first time block with span of 1 (legacy behavior)
+                    this.addPlacement(sectionId, 'Unknown', 'Monday', 0, 1);
+                });
             }
         }
 
@@ -2981,7 +3099,7 @@ class Scheduler {
             config: this.config,
             courses: this.courses,
             sections: this.sections,
-            schedule: this.schedule,
+            schedulePlacements: this.schedulePlacements,
             semester: this.semester,
             year: this.year,
             campus: this.campus,
@@ -2990,27 +3108,28 @@ class Scheduler {
 
         // Convert schedule to readable format
         const readableSchedule = [];
-        for (let slotKey in this.schedule) {
-            const [room, day, timeBlock] = slotKey.split('|');
-            const sectionIds = this.schedule[slotKey] || [];
+        for (let placement of this.schedulePlacements) {
+            const section = this.getSectionById(placement.sectionId);
+            if (section) {
+                const course = this.getCourseById(section.courseId);
+                if (course) {
+                    const startBlock = this.config.timeBlocks[placement.startBlockIndex];
+                    const endBlockIndex = placement.startBlockIndex + placement.blockSpan;
+                    const endBlock = this.config.timeBlocks[Math.min(endBlockIndex, this.config.timeBlocks.length - 1)];
+                    const timeDisplay = startBlock && endBlock ? `${startBlock.label} - ${endBlock.label}` : '';
 
-            for (let sectionId of sectionIds) {
-                const section = this.getSectionById(sectionId);
-                if (section) {
-                    const course = this.getCourseById(section.courseId);
-                    if (course) {
-                        readableSchedule.push({
-                            room,
-                            day,
-                            timeBlock,
-                            section: {
-                                displayName: section.getDisplayName(course.code),
-                                courseTitle: course.title,
-                                instructor: section.instructor,
-                                enrollment: section.enrollment
-                            }
-                        });
-                    }
+                    readableSchedule.push({
+                        room: placement.room,
+                        day: placement.day,
+                        time: timeDisplay,
+                        section: {
+                            displayName: section.getDisplayName(course.code),
+                            courseTitle: course.title,
+                            instructor: section.instructor,
+                            enrollment: section.enrollment,
+                            crn: section.crn
+                        }
+                    });
                 }
             }
         }
