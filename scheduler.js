@@ -2220,6 +2220,7 @@ class Scheduler {
             scheduleEntries: [],
             errors: [],
             warnings: [],
+            facultyConflicts: [],
             roomsCreated: new Set(),
             timeBlocksCreated: new Set()
         };
@@ -2509,6 +2510,50 @@ class Scheduler {
             );
         });
 
+        // Check for faculty conflicts (warnings only, don't block)
+        console.log('=== Checking for faculty conflicts ===');
+        const facultySchedule = {}; // instructor -> [{day, startBlock, endBlock, section, course, room}]
+
+        this.schedulePlacements.forEach(placement => {
+            const section = this.getSectionById(placement.sectionId);
+            if (!section || section.instructor === 'TBD') return;
+
+            const course = this.getCourseById(section.courseId);
+            if (!course) return;
+
+            const instructor = section.instructor;
+            if (!facultySchedule[instructor]) {
+                facultySchedule[instructor] = [];
+            }
+
+            const endBlock = placement.startBlockIndex + placement.blockSpan;
+
+            // Check for overlaps with this instructor's other classes
+            facultySchedule[instructor].forEach(existing => {
+                if (existing.day === placement.day) {
+                    const overlaps = placement.startBlockIndex < existing.endBlock &&
+                                   endBlock > existing.startBlock;
+                    if (overlaps) {
+                        const conflict = `${instructor} teaching ${section.getDisplayName(course.code)} ` +
+                                       `in ${placement.room} and ${existing.displayName} in ${existing.room} ` +
+                                       `at the same time on ${placement.day}`;
+                        results.facultyConflicts.push(conflict);
+                        console.warn(`Faculty Conflict: ${conflict}`);
+                    }
+                }
+            });
+
+            facultySchedule[instructor].push({
+                day: placement.day,
+                startBlock: placement.startBlockIndex,
+                endBlock: endBlock,
+                section: section,
+                course: course,
+                room: placement.room,
+                displayName: section.getDisplayName(course.code)
+            });
+        });
+
         // Update room order to include all newly created rooms
         this.config.updateRoomOrder();
 
@@ -2531,6 +2576,11 @@ class Scheduler {
 
         if (results.timeBlocksCreated.size > 0) {
             message += `\nTime blocks created: ${results.timeBlocksCreated.size}`;
+        }
+
+        if (results.facultyConflicts.length > 0) {
+            message += `\n\n⚠️ Faculty Conflicts: ${results.facultyConflicts.length}`;
+            message += `\n(Check console for details)`;
         }
 
         if (results.warnings.length > 0) {
