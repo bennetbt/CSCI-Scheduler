@@ -651,12 +651,23 @@ class Scheduler {
                     if (placementsStartingHere.length > 0) {
                         // Create ONE cell for all sections at this location (handles cross-listed courses)
                         const slot = document.createElement('td');
-                        slot.className = 'time-slot occupied';
+                        const numSections = placementsStartingHere.length;
+
+                        // Add class based on number of sections
+                        let slotClasses = 'time-slot occupied';
+                        if (numSections >= 3) {
+                            slotClasses += ' slot-multiple';
+                        } else if (numSections === 2) {
+                            slotClasses += ' slot-double';
+                        }
+                        slot.className = slotClasses;
+
                         // Use the blockSpan from the first placement (all should be the same for cross-listed)
                         slot.rowSpan = placementsStartingHere[0].blockSpan;
                         slot.dataset.room = room;
                         slot.dataset.day = day;
                         slot.dataset.blockIndex = blockIndex;
+                        slot.dataset.sectionCount = numSections;
 
                         // Store all placement IDs
                         slot.dataset.placementIds = placementsStartingHere.map(p => p.id).join(',');

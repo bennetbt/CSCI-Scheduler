@@ -478,6 +478,58 @@ header h1 {
     min-width: 140px;
     vertical-align: top;
     margin-bottom: var(--spacing-sm);
+    margin-right: var(--spacing-sm);
+}
+
+/* Styles for cells with multiple overlapping courses */
+.time-slot.slot-multiple {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    overflow-y: auto;
+}
+
+.time-slot.slot-multiple .slot-class {
+    display: block;
+    width: 100%;
+    min-width: unset;
+    margin-bottom: 0;
+    margin-right: 0;
+    padding: 0.3rem;
+    font-size: 0.75rem;
+}
+
+.time-slot.slot-multiple .slot-class h4 {
+    font-size: 0.8rem;
+    margin-bottom: 0.1rem;
+}
+
+.time-slot.slot-multiple .slot-class p {
+    font-size: 0.65rem;
+    margin: 0.05rem 0;
+}
+
+.time-slot.slot-multiple .slot-class .time-display {
+    font-size: 0.6rem;
+}
+
+.time-slot.slot-multiple .slot-actions {
+    margin-top: 0.2rem;
+}
+
+.time-slot.slot-multiple .slot-edit-btn,
+.time-slot.slot-multiple .slot-remove-btn {
+    padding: 0.15rem 0.3rem;
+    font-size: 0.65rem;
+}
+
+.time-slot.slot-multiple .quick-copy-buttons {
+    margin-top: 0.2rem;
+}
+
+.time-slot.slot-multiple .quick-copy-btn {
+    padding: 0.15rem 0.25rem;
+    font-size: 0.6rem;
 }
 
 .time-slot .slot-class:hover {
