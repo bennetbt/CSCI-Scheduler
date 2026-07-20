@@ -34,6 +34,7 @@
             <div class="controls">
                 <button id="addClassBtn" class="btn btn-primary">Add Course</button>
                 <button id="bulkImportBtn" class="btn btn-primary">Bulk Import Courses</button>
+                <button id="importSpreadsheetBtn" class="btn btn-primary">Import Spreadsheet</button>
                 <button id="configBtn" class="btn btn-secondary">Configure Rooms/Times</button>
                 <button id="syncBtn" class="btn btn-secondary">Sync Catalog</button>
                 <button id="reportsBtn" class="btn btn-info">View Reports</button>
@@ -196,9 +197,49 @@
         </div>
     </div>
 
+    <!-- Modal for spreadsheet import -->
+    <div id="importSpreadsheetModal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close">&times;</span>
+            <h2>Import Schedule from Spreadsheet</h2>
+            <p style="color: var(--color-text-secondary); margin-bottom: 1rem;">
+                Upload a CSV or Excel file with course schedule data.
+                The system will auto-create rooms and time blocks as needed.
+            </p>
+
+            <div class="form-group">
+                <label for="spreadsheetFileInput">Select File (CSV or Excel):</label>
+                <input type="file" id="spreadsheetFileInput"
+                       accept=".csv,.xlsx,.xls"
+                       style="width: 100%; padding: 0.5rem; border: 2px solid var(--color-border-dark); border-radius: var(--radius-sm);">
+            </div>
+
+            <div class="form-group" style="display: none;" id="importPreviewSection">
+                <label>Preview (first 5 rows):</label>
+                <div id="importPreview" style="overflow-x: auto; max-height: 300px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1rem; background: var(--color-background);"></div>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="clearExistingData" checked>
+                    Clear existing courses and sections before import
+                </label>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+                <button id="confirmSpreadsheetImport" class="btn btn-primary" disabled>Import</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('importSpreadsheetModal').style.display='none'">Cancel</button>
+            </div>
+
+            <div id="importStatus" style="margin-top: 1rem; display: none;"></div>
+        </div>
+    </div>
+
     <!-- Hidden file input for import -->
     <input type="file" id="importFileInput" accept=".json" style="display: none;">
 
+    <!-- SheetJS library for spreadsheet parsing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
     <script src="scheduler.js"></script>
 </body>
 </html>

@@ -9,13 +9,14 @@ class Course {
 }
 
 class Section {
-    constructor(id, courseId, sectionNumber, instructor, enrollment, duration = 1) {
+    constructor(id, courseId, sectionNumber, instructor, enrollment, duration = 1, crn = null) {
         this.id = id;
         this.courseId = courseId;
         this.sectionNumber = sectionNumber; // e.g., "001"
         this.instructor = instructor;
         this.enrollment = enrollment; // Set based on room capacity
         this.duration = duration; // How many time blocks this section spans
+        this.crn = crn; // Course Reference Number
     }
 
     getDisplayName(courseCode) {
@@ -211,6 +212,21 @@ class Scheduler {
         // Sync Catalog button
         document.getElementById('syncBtn').addEventListener('click', () => {
             this.syncCatalog();
+        });
+
+        // Import Spreadsheet button
+        document.getElementById('importSpreadsheetBtn').addEventListener('click', () => {
+            this.showModal('importSpreadsheetModal');
+        });
+
+        // Spreadsheet file input
+        document.getElementById('spreadsheetFileInput').addEventListener('change', (e) => {
+            this.handleSpreadsheetFileSelect(e);
+        });
+
+        // Confirm spreadsheet import button
+        document.getElementById('confirmSpreadsheetImport').addEventListener('click', () => {
+            this.confirmSpreadsheetImport();
         });
 
         // Reports button
@@ -1849,6 +1865,462 @@ class Scheduler {
         URL.revokeObjectURL(url);
     }
 
+    // Spreadsheet Import Methods
+
+    parseCourseId(courseIdString) {
+        // Handle formats: "CSCI-1100-001", "CSCI 1100-001", "CSCI1100-001"
+        if (!courseIdString || typeof courseIdString !== 'string') {
+            throw new Error('Invalid course ID');
+        }
+
+        const trimmed = courseIdString.trim();
+
+        // Find last dash or last space followed by digits
+        const match = trimmed.match(/^(.+?)[-\s](\d{3})$/);
+
+        if (!match) {
+            throw new Error(`Cannot parse course ID: ${courseIdString}`);
+        }
+
+        const courseCode = match[1].trim();
+        const sectionNumber = match[2];
+
+        return { courseCode, sectionNumber };
+    }
+
+    parseDays(daysString) {
+        // Convert "MW", "TR", "MWF", etc. to ["Monday", "Wednesday", ...]
+        if (!daysString || typeof daysString !== 'string') {
+            return [];
+        }
+
+        const dayMap = {
+            'M': 'Monday',
+            'T': 'Tuesday',
+            'W': 'Wednesday',
+            'R': 'Thursday',
+            'F': 'Friday'
+        };
+
+        const days = [];
+        const cleaned = daysString.trim().toUpperCase();
+
+        for (let char of cleaned) {
+            if (dayMap[char]) {
+                if (!days.includes(dayMap[char])) {
+                    days.push(dayMap[char]);
+                }
+            }
+        }
+
+        return days;
+    }
+
+    parseTime(timeString) {
+        // Parse "8:00 AM", "12:30 PM" etc. to standardized format
+        if (!timeString || typeof timeString !== 'string') {
+            throw new Error('Invalid time string');
+        }
+
+        const trimmed = timeString.trim();
+
+        // Match patterns like "8:00 AM", "12:30 PM", "8:00AM", etc.
+        const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+
+        if (!match) {
+            throw new Error(`Cannot parse time: ${timeString}`);
+        }
+
+        let hours = parseInt(match[1]);
+        const minutes = match[2];
+        const meridiem = match[3].toUpperCase();
+
+        // Convert to 24-hour for sorting/comparison
+        if (meridiem === 'PM' && hours !== 12) {
+            hours += 12;
+        } else if (meridiem === 'AM' && hours === 12) {
+            hours = 0;
+        }
+
+        // Return standardized 12-hour format for display
+        const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
+        const displayMeridiem = hours >= 12 ? 'PM' : 'AM';
+
+        return {
+            display: `${displayHours}:${minutes} ${displayMeridiem}`,
+            hours24: hours,
+            minutes: parseInt(minutes),
+            totalMinutes: hours * 60 + parseInt(minutes)
+        };
+    }
+
+    createTimeBlock(startTime, endTime) {
+        // Format as "8:00 AM - 9:15 AM"
+        const start = this.parseTime(startTime);
+        const end = this.parseTime(endTime);
+
+        return `${start.display} - ${end.display}`;
+    }
+
+    matchOrCreateRoom(building, roomNumber, autoCreate = true) {
+        // Combine building and room: "Nicks" + "302" → "Nicks 302"
+        if (!building && !roomNumber) {
+            throw new Error('Missing room information');
+        }
+
+        const roomName = building && roomNumber
+            ? `${building.trim()} ${roomNumber.trim()}`
+            : (building || roomNumber).trim();
+
+        // Check if room exists
+        if (this.config.rooms.includes(roomName)) {
+            return roomName;
+        }
+
+        // Auto-create if enabled
+        if (autoCreate) {
+            this.config.rooms.push(roomName);
+            this.config.roomOrder.push(roomName);
+            this.config.roomCapacities[roomName] = 30; // Default capacity
+            console.log(`Auto-created room: ${roomName}`);
+            return roomName;
+        }
+
+        throw new Error(`Room not found: ${roomName}`);
+    }
+
+    matchOrCreateTimeBlock(startTime, endTime, day, autoCreate = true) {
+        // Try exact match first
+        const timeBlock = this.createTimeBlock(startTime, endTime);
+        const existingBlocks = this.config.getTimeBlocksForDay(day);
+
+        if (existingBlocks.includes(timeBlock)) {
+            return timeBlock;
+        }
+
+        // Auto-create if enabled
+        if (autoCreate) {
+            if (!this.config.timeBlocksByDay[day]) {
+                this.config.timeBlocksByDay[day] = [];
+            }
+
+            // Insert in chronological order
+            const blocks = this.config.timeBlocksByDay[day];
+            const parsed = this.parseTime(startTime);
+
+            let insertIndex = blocks.length;
+            for (let i = 0; i < blocks.length; i++) {
+                const blockStart = blocks[i].split(' - ')[0];
+                const blockParsed = this.parseTime(blockStart);
+                if (parsed.totalMinutes < blockParsed.totalMinutes) {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            blocks.splice(insertIndex, 0, timeBlock);
+            console.log(`Auto-created time block for ${day}: ${timeBlock}`);
+            return timeBlock;
+        }
+
+        throw new Error(`Time block not found for ${day}: ${timeBlock}`);
+    }
+
+    processSpreadsheetData(rows) {
+        const results = {
+            coursesMap: new Map(),  // courseCode → Course object
+            sections: [],
+            scheduleEntries: [],
+            errors: [],
+            warnings: [],
+            roomsCreated: new Set(),
+            timeBlocksCreated: new Set()
+        };
+
+        rows.forEach((row, index) => {
+            const rowNum = index + 2; // Account for header row and 0-indexing
+
+            try {
+                // 1. Validate required fields
+                if (!row['Course ID'] || !row['Title']) {
+                    throw new Error('Missing required fields: Course ID or Title');
+                }
+
+                // 2. Parse course ID
+                const { courseCode, sectionNumber } = this.parseCourseId(row['Course ID']);
+
+                // 3. Get or create course
+                let course = results.coursesMap.get(courseCode);
+                if (!course) {
+                    course = new Course(
+                        this.nextCourseId++,
+                        courseCode,
+                        row['Title'],
+                        parseInt(row['Credits']) || 3
+                    );
+                    results.coursesMap.set(courseCode, course);
+                }
+
+                // 4. Create section
+                const section = new Section(
+                    this.nextSectionId++,
+                    course.id,
+                    sectionNumber,
+                    row['Instructor'] || 'TBD',
+                    parseInt(row['Max Enrollment']) || 30,
+                    1, // duration
+                    row['CRN'] || null
+                );
+                results.sections.push(section);
+
+                // 5. Parse days
+                const days = this.parseDays(row['Days']);
+                if (days.length === 0) {
+                    results.warnings.push(`Row ${rowNum}: No valid days found`);
+                }
+
+                // 6. Match or create room
+                let room;
+                try {
+                    room = this.matchOrCreateRoom(row['Building'], row['Room'], true);
+                    if (!this.config.rooms.includes(room)) {
+                        results.roomsCreated.add(room);
+                    }
+                } catch (error) {
+                    throw new Error(`Room error: ${error.message}`);
+                }
+
+                // 7. Process schedule for each day
+                days.forEach(day => {
+                    try {
+                        // Ensure day exists in config
+                        if (!this.config.days.includes(day)) {
+                            this.config.days.push(day);
+                            this.config.timeBlocksByDay[day] = [];
+                        }
+
+                        // Match or create time block
+                        const timeBlock = this.matchOrCreateTimeBlock(
+                            row['Start Time'],
+                            row['End Time'],
+                            day,
+                            true
+                        );
+
+                        if (!this.config.timeBlocksByDay[day].includes(timeBlock)) {
+                            results.timeBlocksCreated.add(`${day}: ${timeBlock}`);
+                        }
+
+                        // Create schedule entry
+                        results.scheduleEntries.push({
+                            sectionId: section.id,
+                            room: room,
+                            day: day,
+                            timeBlock: timeBlock
+                        });
+
+                    } catch (error) {
+                        results.errors.push(`Row ${rowNum}, ${day}: ${error.message}`);
+                    }
+                });
+
+            } catch (error) {
+                results.errors.push(`Row ${rowNum}: ${error.message}`);
+            }
+        });
+
+        return results;
+    }
+
+    handleSpreadsheetFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Store file for later import
+        this.selectedSpreadsheetFile = file;
+
+        // Read and preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                // Get first sheet
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet);
+
+                // Show preview
+                this.showImportPreview(rows.slice(0, 5));
+
+                // Enable import button
+                document.getElementById('confirmSpreadsheetImport').disabled = false;
+
+            } catch (error) {
+                alert(`Error reading file: ${error.message}`);
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    showImportPreview(rows) {
+        const previewSection = document.getElementById('importPreviewSection');
+        const previewDiv = document.getElementById('importPreview');
+
+        if (rows.length === 0) {
+            previewDiv.innerHTML = '<p>No data found in file</p>';
+            return;
+        }
+
+        // Build preview table
+        let html = '<table class="report-table" style="font-size: 0.8rem;"><thead><tr>';
+
+        // Headers
+        const headers = Object.keys(rows[0]);
+        headers.forEach(header => {
+            html += `<th>${header}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        // Rows
+        rows.forEach(row => {
+            html += '<tr>';
+            headers.forEach(header => {
+                html += `<td>${row[header] || ''}</td>`;
+            });
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        previewDiv.innerHTML = html;
+        previewSection.style.display = 'block';
+    }
+
+    confirmSpreadsheetImport() {
+        if (!this.selectedSpreadsheetFile) {
+            alert('No file selected');
+            return;
+        }
+
+        const clearExisting = document.getElementById('clearExistingData').checked;
+
+        // Show processing message
+        const statusDiv = document.getElementById('importStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = '<p>Processing spreadsheet...</p>';
+
+        // Read file
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                // Get first sheet
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet);
+
+                // Process data
+                this.importSpreadsheet(rows, { clearExisting });
+
+            } catch (error) {
+                alert(`Error importing file: ${error.message}`);
+                statusDiv.style.display = 'none';
+            }
+        };
+
+        reader.readAsArrayBuffer(this.selectedSpreadsheetFile);
+    }
+
+    importSpreadsheet(rows, options = {}) {
+        // Process data
+        const results = this.processSpreadsheetData(rows);
+
+        // Show errors if any
+        if (results.errors.length > 0) {
+            const proceed = confirm(
+                `Found ${results.errors.length} errors.\n\n` +
+                results.errors.slice(0, 5).join('\n') +
+                (results.errors.length > 5 ? `\n... and ${results.errors.length - 5} more` : '') +
+                `\n\nContinue with valid rows?`
+            );
+
+            if (!proceed) {
+                document.getElementById('importStatus').style.display = 'none';
+                return;
+            }
+        }
+
+        // Clear existing if requested
+        if (options.clearExisting) {
+            this.courses = [];
+            this.sections = [];
+            this.schedule = {};
+        }
+
+        // Add courses
+        results.coursesMap.forEach(course => {
+            this.addCourse(course);
+        });
+
+        // Add sections
+        results.sections.forEach(section => {
+            this.addSection(section);
+        });
+
+        // Add schedule entries
+        results.scheduleEntries.forEach(entry => {
+            this.assignSectionToSlot(
+                entry.sectionId,
+                entry.room,
+                entry.day,
+                entry.timeBlock
+            );
+        });
+
+        // Re-render
+        this.renderScheduleGrid();
+        this.renderCourseCatalog();
+
+        // Save
+        this.saveCurrentSchedule();
+
+        // Show summary
+        let message = `Import completed!\n\n`;
+        message += `Courses: ${results.coursesMap.size}\n`;
+        message += `Sections: ${results.sections.length}\n`;
+        message += `Schedule entries: ${results.scheduleEntries.length}\n`;
+
+        if (results.roomsCreated.size > 0) {
+            message += `\nRooms created: ${results.roomsCreated.size}`;
+        }
+
+        if (results.timeBlocksCreated.size > 0) {
+            message += `\nTime blocks created: ${results.timeBlocksCreated.size}`;
+        }
+
+        if (results.warnings.length > 0) {
+            message += `\n\nWarnings: ${results.warnings.length}`;
+        }
+
+        if (results.errors.length > 0) {
+            message += `\nErrors: ${results.errors.length}`;
+        }
+
+        alert(message);
+
+        // Close modal
+        document.getElementById('importSpreadsheetModal').style.display = 'none';
+        document.getElementById('importStatus').style.display = 'none';
+
+        // Reset file input
+        document.getElementById('spreadsheetFileInput').value = '';
+        document.getElementById('confirmSpreadsheetImport').disabled = true;
+        document.getElementById('importPreviewSection').style.display = 'none';
+        this.selectedSpreadsheetFile = null;
+    }
+
     clearSchedule() {
         // Clear all sections from the schedule
         this.sections = [];
@@ -2025,7 +2497,7 @@ class Scheduler {
 
         if (data.courses && data.sections) {
             this.courses = data.courses.map(c => new Course(c.id, c.code, c.title, c.credits));
-            this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration));
+            this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration, s.crn));
             this.nextCourseId = data.nextCourseId || this.nextCourseId;
             this.nextSectionId = data.nextSectionId || this.nextSectionId;
         }
@@ -2388,7 +2860,7 @@ class Scheduler {
                 if (data.courses && data.sections) {
                     // New format
                     this.courses = data.courses.map(c => new Course(c.id, c.code, c.title, c.credits));
-                    this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration));
+                    this.sections = data.sections.map(s => new Section(s.id, s.courseId, s.sectionNumber, s.instructor, s.enrollment, s.duration, s.crn));
                     this.nextCourseId = data.nextCourseId || this.nextCourseId;
                     this.nextSectionId = data.nextSectionId || this.nextSectionId;
                 } else if (data.classes) {
