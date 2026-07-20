@@ -2123,6 +2123,14 @@ class Scheduler {
         return `${start.display} - ${end.display}`;
     }
 
+    normalizeRoomName(roomName) {
+        // Normalize room name: trim, collapse multiple spaces, consistent formatting
+        if (!roomName) return '';
+        return String(roomName)
+            .trim()
+            .replace(/\s+/g, ' '); // Collapse multiple spaces to single space
+    }
+
     matchOrCreateRoom(building, roomNumber, autoCreate = true) {
         // Combine building and room: "Nicks" + "302" → "Nicks 302"
         // Handle empty values and convert to string
@@ -2133,13 +2141,20 @@ class Scheduler {
             throw new Error('Missing room information');
         }
 
-        const roomName = buildingStr && roomStr
+        // Combine and normalize
+        let roomName = buildingStr && roomStr
             ? `${buildingStr} ${roomStr}`
             : (buildingStr || roomStr);
 
-        // Check if room exists
-        if (this.config.rooms.includes(roomName)) {
-            return roomName;
+        roomName = this.normalizeRoomName(roomName);
+
+        // Check if room exists (normalized comparison)
+        const existingRoom = this.config.rooms.find(r =>
+            this.normalizeRoomName(r) === roomName
+        );
+
+        if (existingRoom) {
+            return existingRoom;
         }
 
         // Auto-create if enabled
@@ -2147,7 +2162,7 @@ class Scheduler {
             this.config.rooms.push(roomName);
             this.config.roomOrder.push(roomName);
             this.config.roomCapacities[roomName] = 30; // Default capacity
-            console.log(`Auto-created room: ${roomName}`);
+            console.log(`Auto-created room: ${roomName} (Building: ${buildingStr}, Room: ${roomStr})`);
             return roomName;
         }
 
@@ -2277,6 +2292,8 @@ class Scheduler {
                     if (!this.config.rooms.includes(room)) {
                         results.roomsCreated.add(room);
                     }
+                    // Log room assignment for debugging
+                    console.log(`Row ${rowNum}: ${courseCode}-${sectionNumber} → Room: ${room} (Building: "${row['Building']}", Room: "${row['Room']}")`);
                 } catch (error) {
                     results.warnings.push(`Row ${rowNum} (${courseCode}-${sectionNumber}): ${error.message} - section created but not scheduled`);
                     return;
