@@ -2232,6 +2232,7 @@ class Scheduler {
     processSpreadsheetData(rows) {
         const results = {
             coursesMap: new Map(),  // courseCode → Course object
+            sectionsMap: new Map(), // CRN → Section object (to prevent duplicates)
             sections: [],
             scheduleEntries: [],
             errors: [],
@@ -2276,21 +2277,34 @@ class Scheduler {
                     results.coursesMap.set(courseCode, course);
                 }
 
-                // 4. Create section
+                // 4. Get or create section (deduplicate by CRN)
                 const enrollment = row['Max Enrollment'] ? parseInt(row['Max Enrollment']) : 30;
                 const crn = row['CRN'] ? String(row['CRN']) : null;
                 const instructor = row['Instructor'] ? String(row['Instructor']) : 'TBD';
 
-                const section = new Section(
-                    this.nextSectionId++,
-                    course.id,
-                    sectionNumber,
-                    instructor,
-                    isNaN(enrollment) ? 30 : enrollment,
-                    1, // duration
-                    crn
-                );
-                results.sections.push(section);
+                let section;
+                // Check if section with this CRN already exists
+                if (crn && results.sectionsMap.has(crn)) {
+                    section = results.sectionsMap.get(crn);
+                    console.log(`Row ${rowNum}: Reusing existing section for CRN ${crn} (${courseCode}-${sectionNumber})`);
+                } else {
+                    // Create new section
+                    section = new Section(
+                        this.nextSectionId++,
+                        course.id,
+                        sectionNumber,
+                        instructor,
+                        isNaN(enrollment) ? 30 : enrollment,
+                        1, // duration
+                        crn
+                    );
+                    results.sections.push(section);
+
+                    // Track by CRN to prevent duplicates
+                    if (crn) {
+                        results.sectionsMap.set(crn, section);
+                    }
+                }
 
                 // 5. Parse days
                 const days = this.parseDays(row['Days']);
@@ -2732,9 +2746,10 @@ class Scheduler {
             config: this.config,
             courses: this.courses,
             sections: this.sections,
-            schedule: this.schedule,
+            schedulePlacements: this.schedulePlacements,
             nextCourseId: this.nextCourseId,
             nextSectionId: this.nextSectionId,
+            nextPlacementId: this.nextPlacementId,
             semester: this.semester,
             year: this.year,
             campus: this.campus,
@@ -2779,7 +2794,7 @@ class Scheduler {
         // Keep the config but reset courses, sections, and schedule
         this.courses = [];
         this.sections = [];
-        this.schedule = {};
+        this.schedulePlacements = [];
         // Don't reset IDs to avoid conflicts
     }
 
@@ -2804,7 +2819,7 @@ class Scheduler {
         // Load schedule placements (new format)
         if (data.schedulePlacements) {
             this.schedulePlacements = data.schedulePlacements;
-            this.nextPlacementId = Math.max(...this.schedulePlacements.map(p => p.id), 0) + 1;
+            this.nextPlacementId = data.nextPlacementId || (Math.max(...this.schedulePlacements.map(p => p.id || 0), 0) + 1);
         } else if (data.schedule) {
             // Migrate old format - not fully supported, will lose time information
             // Best effort: place at first available slot
