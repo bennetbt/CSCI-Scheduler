@@ -2490,6 +2490,9 @@ class Scheduler {
             );
         });
 
+        // Update room order to include all newly created rooms
+        this.config.updateRoomOrder();
+
         // Re-render
         this.renderScheduleGrid();
         this.renderCourseCatalog();
