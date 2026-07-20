@@ -2328,13 +2328,18 @@ class Scheduler {
                         const blockSpan = this.config.calculateBlockSpan(durationMinutes);
 
                         // Create schedule entry with grid positioning
-                        results.scheduleEntries.push({
+                        const entry = {
                             sectionId: section.id,
                             room: room,
                             day: day,
                             startBlockIndex: startBlockIndex,
                             blockSpan: blockSpan
-                        });
+                        };
+
+                        results.scheduleEntries.push(entry);
+
+                        // Extra logging for debugging
+                        console.log(`  → ${day}: section ID ${section.id}, room: ${room}, time block ${startBlockIndex}, span ${blockSpan}`);
 
                     } catch (error) {
                         results.errors.push(`Row ${rowNum} (${courseCode}-${sectionNumber}), ${day}: ${error.message}`);
@@ -2487,7 +2492,14 @@ class Scheduler {
         });
 
         // Add schedule placements
+        console.log('=== Adding placements to schedule ===');
         results.scheduleEntries.forEach(entry => {
+            const section = this.getSectionById(entry.sectionId);
+            const course = section ? this.getCourseById(section.courseId) : null;
+            const displayName = section && course ? section.getDisplayName(course.code) : 'Unknown';
+
+            console.log(`Adding: ${displayName} to room "${entry.room}" on ${entry.day} at block ${entry.startBlockIndex}`);
+
             this.addPlacement(
                 entry.sectionId,
                 entry.room,
