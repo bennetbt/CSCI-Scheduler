@@ -388,14 +388,8 @@ class Scheduler {
         // Remove section from sections array
         this.sections = this.sections.filter(s => s.id !== sectionId);
 
-        // Remove from schedule (handle array format)
-        for (let slotKey in this.schedule) {
-            const sectionIds = this.schedule[slotKey] || [];
-            this.schedule[slotKey] = sectionIds.filter(id => id !== sectionId);
-            if (this.schedule[slotKey].length === 0) {
-                delete this.schedule[slotKey];
-            }
-        }
+        // Remove all placements for this section
+        this.removeSectionPlacements(sectionId);
 
         // Auto-save after removing section
         this.saveCurrentSchedule();
@@ -497,34 +491,37 @@ class Scheduler {
         return null;
     }
 
-    checkFacultyConflict(instructor, day, timeBlock, excludeSectionId = null) {
+    checkFacultyConflict(instructor, day, startBlockIndex, blockSpan, excludeSectionId = null) {
         // Skip conflict check for TBD instructors (unassigned)
         if (!instructor || instructor === 'TBD') {
             return { conflict: false };
         }
 
-        // Check if this instructor is already teaching at this time on this day
-        for (let slotKey in this.schedule) {
-            const [room, slotDay, slotTime] = slotKey.split('|');
+        // Calculate the time range we're checking
+        const endBlockIndex = startBlockIndex + blockSpan;
 
-            // Check if it's the same day and time block
-            if (slotDay === day && slotTime === timeBlock) {
-                const sectionIds = this.schedule[slotKey] || [];
+        // Check if this instructor is already teaching at an overlapping time on this day
+        for (let placement of this.schedulePlacements) {
+            // Skip if different day
+            if (placement.day !== day) continue;
 
-                for (let sectionId of sectionIds) {
-                    // Skip if this is the same section we're moving
-                    if (sectionId === excludeSectionId) continue;
+            // Skip if this is the same section we're moving/editing
+            if (placement.sectionId === excludeSectionId) continue;
 
-                    const section = this.getSectionById(sectionId);
-                    if (section && section.instructor === instructor && section.instructor !== 'TBD') {
-                        const course = this.getCourseById(section.courseId);
-                        return {
-                            conflict: true,
-                            conflictingSection: section,
-                            conflictingCourse: course,
-                            conflictingRoom: room
-                        };
-                    }
+            // Check if time ranges overlap
+            const placementEnd = placement.startBlockIndex + placement.blockSpan;
+            const overlaps = startBlockIndex < placementEnd && endBlockIndex > placement.startBlockIndex;
+
+            if (overlaps) {
+                const section = this.getSectionById(placement.sectionId);
+                if (section && section.instructor === instructor && section.instructor !== 'TBD') {
+                    const course = this.getCourseById(section.courseId);
+                    return {
+                        conflict: true,
+                        conflictingSection: section,
+                        conflictingCourse: course,
+                        conflictingRoom: placement.room
+                    };
                 }
             }
         }
@@ -1061,15 +1058,15 @@ class Scheduler {
 
             const room = slot.dataset.room;
             const day = slot.dataset.day;
-            const timeBlock = slot.dataset.timeBlock;
+            const blockIndex = parseInt(slot.dataset.blockIndex);
 
             if (this.draggedCourseId) {
                 // Dragging a course from catalog - create new section
-                this.showCreateSectionDialog(this.draggedCourseId, room, day, timeBlock);
+                this.showCreateSectionDialog(this.draggedCourseId, room, day, blockIndex);
                 this.draggedCourseId = null;
             } else if (this.draggedSectionId) {
                 // Dragging an existing section - move it
-                this.moveSection(this.draggedSectionId, room, day, timeBlock);
+                this.moveSection(this.draggedSectionId, room, day, blockIndex);
                 this.draggedSectionId = null;
             }
         });
@@ -1079,23 +1076,41 @@ class Scheduler {
         document.getElementById(modalId).style.display = 'block';
     }
 
-    showCreateSectionDialog(courseId, room, day, timeBlock) {
+    showCreateSectionDialog(courseId, room, day, blockIndex) {
         const course = this.getCourseById(courseId);
         if (!course) return;
 
         const roomCapacity = this.config.getRoomCapacity(room);
+        const timeBlock = this.config.timeBlocks[blockIndex];
+        const timeDisplay = timeBlock ? timeBlock.label : '';
 
         // Prompt for section number
         const sectionNumber = prompt(
             `Creating section for ${course.code} - ${course.title}\n\n` +
             `Room: ${room} (Capacity: ${roomCapacity})\n` +
             `Day: ${day}\n` +
-            `Time: ${timeBlock}\n\n` +
+            `Start Time: ${timeDisplay}\n\n` +
             `Enter section number:`,
             '001'
         );
 
         if (!sectionNumber) return; // User cancelled
+
+        // Prompt for duration in minutes
+        const durationInput = prompt(
+            `Enter class duration in minutes:`,
+            '75'
+        );
+
+        if (!durationInput) return; // User cancelled
+
+        const durationMinutes = parseInt(durationInput);
+        if (isNaN(durationMinutes) || durationMinutes <= 0) {
+            alert('Invalid duration');
+            return;
+        }
+
+        const blockSpan = this.config.calculateBlockSpan(durationMinutes);
 
         // Prompt for instructor
         const instructor = prompt(
@@ -1117,15 +1132,15 @@ class Scheduler {
         }
 
         // Check if slot is at capacity (max 2 sections)
-        const existingSections = this.getSectionsInSlot(room, day, timeBlock);
+        const existingSections = this.getSectionsInSlot(room, day, blockIndex);
         if (existingSections.length >= 2) {
-            alert(`${room} on ${day} at ${timeBlock} already has 2 sections (maximum).\n\nPlease choose another slot.`);
+            alert(`${room} on ${day} at ${timeDisplay} already has 2 sections (maximum).\n\nPlease choose another slot.`);
             return;
         }
 
         // Check for faculty conflicts
         if (instructorName !== 'TBD') {
-            const conflictCheck = this.checkFacultyConflict(instructorName, day, timeBlock);
+            const conflictCheck = this.checkFacultyConflict(instructorName, day, blockIndex, blockSpan);
             if (conflictCheck.conflict) {
                 const conflictCourse = conflictCheck.conflictingCourse;
                 const conflictSection = conflictCheck.conflictingSection;
@@ -1152,7 +1167,7 @@ class Scheduler {
         );
 
         this.addSection(newSection);
-        this.assignSectionToSlot(newSection.id, room, day, timeBlock);
+        this.addPlacement(newSection.id, room, day, blockIndex, blockSpan);
 
         // Auto-save after creating section
         this.saveCurrentSchedule();
@@ -1179,8 +1194,9 @@ class Scheduler {
             );
 
             this.addSection(crossListedSection);
-            this.assignSectionToSlot(crossListedSection.id, room, day, timeBlock);
+            this.addPlacement(crossListedSection.id, room, day, blockIndex, blockSpan);
 
+            const displayName = newSection.getDisplayName(course.code);
             alert(`Created ${displayName} and cross-listed ${crossListedSection.getDisplayName(crossListedCode)}`);
         }
 
@@ -1192,30 +1208,23 @@ class Scheduler {
         this.saveCurrentSchedule();
     }
 
-    moveSection(sectionId, targetRoom, targetDay, targetTimeBlock) {
+    moveSection(sectionId, targetRoom, targetDay, targetBlockIndex) {
         const section = this.getSectionById(sectionId);
         if (!section) return;
 
         const course = this.getCourseById(section.courseId);
         if (!course) return;
 
-        const displayName = section.getDisplayName(course.code);
-
-        // Find the source location
-        let sourceRoom = null, sourceDay = null, sourceTimeBlock = null;
-        for (let slotKey in this.schedule) {
-            const sectionIds = this.schedule[slotKey] || [];
-            if (sectionIds.includes(sectionId)) {
-                [sourceRoom, sourceDay, sourceTimeBlock] = slotKey.split('|');
-                break;
-            }
-        }
+        // Get existing placements for this section to preserve blockSpan
+        const existingPlacements = this.getPlacementsForSection(sectionId);
+        const blockSpan = existingPlacements.length > 0 ? existingPlacements[0].blockSpan : 5; // Default to 50 minutes (5 blocks)
 
         // Check for faculty conflicts
         const conflictCheck = this.checkFacultyConflict(
             section.instructor,
             targetDay,
-            targetTimeBlock,
+            targetBlockIndex,
+            blockSpan,
             sectionId
         );
 
@@ -1237,13 +1246,11 @@ class Scheduler {
         const roomCapacity = this.config.getRoomCapacity(targetRoom);
         section.enrollment = roomCapacity;
 
-        // Remove from previous slot
-        if (sourceRoom && sourceDay && sourceTimeBlock) {
-            this.removeSectionFromSlot(sourceRoom, sourceDay, sourceTimeBlock, sectionId);
-        }
+        // Remove all existing placements for this section
+        this.removeSectionPlacements(sectionId);
 
-        // Assign to new slot
-        this.assignSectionToSlot(sectionId, targetRoom, targetDay, targetTimeBlock);
+        // Add new placement
+        this.addPlacement(sectionId, targetRoom, targetDay, targetBlockIndex, blockSpan);
 
         // Re-render
         this.renderScheduleGrid();
