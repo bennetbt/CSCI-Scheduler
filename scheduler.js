@@ -2138,14 +2138,6 @@ class Scheduler {
         };
     }
 
-    createTimeBlock(startTime, endTime) {
-        // Format as "8:00 AM - 9:15 AM"
-        const start = this.parseTime(startTime);
-        const end = this.parseTime(endTime);
-
-        return `${start.display} - ${end.display}`;
-    }
-
     normalizeRoomName(roomName) {
         // Normalize room name: trim, collapse multiple spaces, consistent formatting
         if (!roomName) return '';
@@ -2190,43 +2182,6 @@ class Scheduler {
         }
 
         throw new Error(`Room not found: ${roomName}`);
-    }
-
-    matchOrCreateTimeBlock(startTime, endTime, day, autoCreate = true) {
-        // Try exact match first
-        const timeBlock = this.createTimeBlock(startTime, endTime);
-        const existingBlocks = this.config.getTimeBlocksForDay(day);
-
-        if (existingBlocks.includes(timeBlock)) {
-            return timeBlock;
-        }
-
-        // Auto-create if enabled
-        if (autoCreate) {
-            if (!this.config.timeBlocksByDay[day]) {
-                this.config.timeBlocksByDay[day] = [];
-            }
-
-            // Insert in chronological order
-            const blocks = this.config.timeBlocksByDay[day];
-            const parsed = this.parseTime(startTime);
-
-            let insertIndex = blocks.length;
-            for (let i = 0; i < blocks.length; i++) {
-                const blockStart = blocks[i].split(' - ')[0];
-                const blockParsed = this.parseTime(blockStart);
-                if (parsed.totalMinutes < blockParsed.totalMinutes) {
-                    insertIndex = i;
-                    break;
-                }
-            }
-
-            blocks.splice(insertIndex, 0, timeBlock);
-            console.log(`Auto-created time block for ${day}: ${timeBlock}`);
-            return timeBlock;
-        }
-
-        throw new Error(`Time block not found for ${day}: ${timeBlock}`);
     }
 
     processSpreadsheetData(rows) {
@@ -2742,8 +2697,23 @@ class Scheduler {
     saveCurrentSchedule() {
         // Save current schedule to localStorage
         const scheduleKey = this.getScheduleKey();
+
+        // Create a clean config without deprecated timeBlocksByDay
+        const cleanConfig = {
+            rooms: this.config.rooms,
+            roomOrder: this.config.roomOrder,
+            roomCapacities: this.config.roomCapacities,
+            days: this.config.days,
+            gridStartHour: this.config.gridStartHour,
+            gridStartMinute: this.config.gridStartMinute,
+            gridEndHour: this.config.gridEndHour,
+            gridEndMinute: this.config.gridEndMinute,
+            gridIntervalMinutes: this.config.gridIntervalMinutes,
+            timeBlocks: this.config.timeBlocks
+        };
+
         const scheduleData = {
-            config: this.config,
+            config: cleanConfig,
             courses: this.courses,
             sections: this.sections,
             schedulePlacements: this.schedulePlacements,
@@ -2806,7 +2776,8 @@ class Scheduler {
             this.config.days = data.config.days || this.config.days;
             this.config.roomOrder = data.config.roomOrder || [...this.config.rooms];
             this.config.roomCapacities = data.config.roomCapacities || this.config.roomCapacities;
-            this.config.timeBlocksByDay = data.config.timeBlocksByDay || this.config.timeBlocksByDay;
+            // Don't load timeBlocksByDay - it's deprecated and causes corruption
+            // The new system uses the fixed timeBlocks array generated in constructor
         }
 
         if (data.courses && data.sections) {
@@ -3235,8 +3206,22 @@ class Scheduler {
     }
 
     exportToJSON() {
+        // Create a clean config without deprecated timeBlocksByDay
+        const cleanConfig = {
+            rooms: this.config.rooms,
+            roomOrder: this.config.roomOrder,
+            roomCapacities: this.config.roomCapacities,
+            days: this.config.days,
+            gridStartHour: this.config.gridStartHour,
+            gridStartMinute: this.config.gridStartMinute,
+            gridEndHour: this.config.gridEndHour,
+            gridEndMinute: this.config.gridEndMinute,
+            gridIntervalMinutes: this.config.gridIntervalMinutes,
+            timeBlocks: this.config.timeBlocks
+        };
+
         const exportData = {
-            config: this.config,
+            config: cleanConfig,
             courses: this.courses,
             sections: this.sections,
             schedulePlacements: this.schedulePlacements,
