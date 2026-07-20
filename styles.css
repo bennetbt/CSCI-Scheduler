@@ -392,6 +392,21 @@ header h1 {
     font-weight: 700;
     white-space: nowrap;
     min-width: 120px;
+    font-size: 0.75rem;
+    padding: 0.15rem var(--spacing-sm);
+    height: 20px;
+}
+
+.grid-table .time-header.time-major {
+    font-size: 0.85rem;
+    font-weight: 700;
+    border-top: 2px solid var(--etsu-gold);
+}
+
+.grid-table .time-header.time-minor {
+    font-size: 0.7rem;
+    font-weight: 400;
+    opacity: 0.7;
 }
 
 /* Reorder buttons */
@@ -428,8 +443,8 @@ header h1 {
 /* Time Slot Styles */
 .time-slot {
     min-width: 150px;
-    min-height: 80px;
-    padding: var(--spacing-sm);
+    min-height: 20px;
+    padding: 0.2rem var(--spacing-sm);
     background-color: var(--color-background);
     transition: all 0.2s ease;
     position: relative;

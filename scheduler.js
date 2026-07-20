@@ -38,12 +38,12 @@ class ScheduleConfig {
         };
         this.days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-        // Fixed 15-minute time grid
+        // Fixed 10-minute time grid
         this.gridStartHour = 8; // 8:00 AM
         this.gridStartMinute = 0;
-        this.gridEndHour = 17; // 5:00 PM
+        this.gridEndHour = 22; // 10:00 PM
         this.gridEndMinute = 0;
-        this.gridIntervalMinutes = 15;
+        this.gridIntervalMinutes = 10;
 
         // Generate time blocks
         this.timeBlocks = this.generateTimeBlocks();
@@ -61,11 +61,16 @@ class ScheduleConfig {
             const meridiem = hours >= 12 ? 'PM' : 'AM';
             const timeLabel = `${displayHours}:${mins.toString().padStart(2, '0')} ${meridiem}`;
 
+            // Only show label for major times (on the hour and half-hour)
+            const showLabel = mins === 0 || mins === 30;
+
             blocks.push({
                 label: timeLabel,
+                displayLabel: showLabel ? timeLabel : '', // Empty string for minor times
                 startMinutes: currentMinutes,
                 hours24: hours,
-                minutes: mins
+                minutes: mins,
+                isMajorTime: showLabel
             });
 
             currentMinutes += this.gridIntervalMinutes;
@@ -622,10 +627,10 @@ class Scheduler {
             timeBlocks.forEach((timeBlock, blockIndex) => {
                 const row = document.createElement('tr');
 
-                // Time label
+                // Time label (only show for major times)
                 const timeCell = document.createElement('th');
-                timeCell.className = 'time-header';
-                timeCell.textContent = timeBlock.label;
+                timeCell.className = timeBlock.isMajorTime ? 'time-header time-major' : 'time-header time-minor';
+                timeCell.textContent = timeBlock.displayLabel;
                 row.appendChild(timeCell);
 
                 // Room slots (in the configured order)
