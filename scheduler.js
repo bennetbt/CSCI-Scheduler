@@ -644,28 +644,32 @@ class Scheduler {
                     );
 
                     if (placementsStartingHere.length > 0) {
-                        // Create cell with section(s) that start here
-                        placementsStartingHere.forEach(placement => {
-                            const slot = document.createElement('td');
-                            slot.className = 'time-slot occupied';
-                            slot.rowSpan = placement.blockSpan;
-                            slot.dataset.room = room;
-                            slot.dataset.day = day;
-                            slot.dataset.blockIndex = blockIndex;
-                            slot.dataset.placementId = placement.id;
+                        // Create ONE cell for all sections at this location (handles cross-listed courses)
+                        const slot = document.createElement('td');
+                        slot.className = 'time-slot occupied';
+                        // Use the blockSpan from the first placement (all should be the same for cross-listed)
+                        slot.rowSpan = placementsStartingHere[0].blockSpan;
+                        slot.dataset.room = room;
+                        slot.dataset.day = day;
+                        slot.dataset.blockIndex = blockIndex;
 
+                        // Store all placement IDs
+                        slot.dataset.placementIds = placementsStartingHere.map(p => p.id).join(',');
+
+                        // Add all sections to this one cell
+                        placementsStartingHere.forEach(placement => {
                             const section = this.getSectionById(placement.sectionId);
                             if (section) {
                                 const sectionDiv = this.createScheduledSectionElement(placement, section, room, day);
                                 slot.appendChild(sectionDiv);
                             }
-
-                            // Make slot a drop target
-                            this.makeDropTarget(slot);
-
-                            row.appendChild(slot);
                             renderedPlacements.add(placement.id);
                         });
+
+                        // Make slot a drop target
+                        this.makeDropTarget(slot);
+
+                        row.appendChild(slot);
                     } else if (placementsSpanningHere.length === 0) {
                         // Empty slot - no section starting or spanning here
                         const slot = document.createElement('td');
