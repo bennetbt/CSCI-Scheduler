@@ -1869,11 +1869,14 @@ class Scheduler {
 
     parseCourseId(courseIdString) {
         // Handle formats: "CSCI-1100-001", "CSCI 1100-001", "CSCI1100-001"
-        if (!courseIdString || typeof courseIdString !== 'string') {
+        // Also handle numbers from Excel (convert to string)
+        if (!courseIdString && courseIdString !== 0) {
             throw new Error('Invalid course ID');
         }
 
-        const trimmed = courseIdString.trim();
+        // Convert to string if it's a number
+        const str = String(courseIdString);
+        const trimmed = str.trim();
 
         // Find last dash or last space followed by digits
         const match = trimmed.match(/^(.+?)[-\s](\d{3})$/);
@@ -1890,7 +1893,15 @@ class Scheduler {
 
     parseDays(daysString) {
         // Convert "MW", "TR", "MWF", etc. to ["Monday", "Wednesday", ...]
-        if (!daysString || typeof daysString !== 'string') {
+        if (!daysString) {
+            return [];
+        }
+
+        // Convert to string if needed
+        const str = String(daysString);
+        const cleaned = str.trim().toUpperCase();
+
+        if (!cleaned) {
             return [];
         }
 
@@ -1903,7 +1914,6 @@ class Scheduler {
         };
 
         const days = [];
-        const cleaned = daysString.trim().toUpperCase();
 
         for (let char of cleaned) {
             if (dayMap[char]) {
@@ -1921,8 +1931,8 @@ class Scheduler {
         // Excel time: 0.333333 = 8:00 AM, 0.5 = 12:00 PM
         // Text time: "8:00 AM", "12:30 PM"
 
-        if (timeValue === null || timeValue === undefined) {
-            throw new Error('Invalid time value');
+        if (timeValue === null || timeValue === undefined || timeValue === '') {
+            throw new Error('Missing time value');
         }
 
         let hours24, minutes;
@@ -1932,11 +1942,15 @@ class Scheduler {
             // Excel stores times as fractions of a day
             // 0.5 = 12 hours = noon
             const totalMinutes = Math.round(timeValue * 24 * 60);
-            hours24 = Math.floor(totalMinutes / 60);
+            hours24 = Math.floor(totalMinutes / 60) % 24; // Ensure within 24 hours
             minutes = totalMinutes % 60;
         } else if (typeof timeValue === 'string') {
             // Try to parse as text time
             const trimmed = timeValue.trim();
+
+            if (!trimmed) {
+                throw new Error('Empty time string');
+            }
 
             // Match patterns like "8:00 AM", "12:30 PM", "8:00AM", etc.
             const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -1984,13 +1998,17 @@ class Scheduler {
 
     matchOrCreateRoom(building, roomNumber, autoCreate = true) {
         // Combine building and room: "Nicks" + "302" → "Nicks 302"
-        if (!building && !roomNumber) {
+        // Handle empty values and convert to string
+        const buildingStr = building ? String(building).trim() : '';
+        const roomStr = roomNumber ? String(roomNumber).trim() : '';
+
+        if (!buildingStr && !roomStr) {
             throw new Error('Missing room information');
         }
 
-        const roomName = building && roomNumber
-            ? `${building.trim()} ${roomNumber.trim()}`
-            : (building || roomNumber).trim();
+        const roomName = buildingStr && roomStr
+            ? `${buildingStr} ${roomStr}`
+            : (buildingStr || roomStr);
 
         // Check if room exists
         if (this.config.rooms.includes(roomName)) {
@@ -2062,44 +2080,70 @@ class Scheduler {
 
             try {
                 // 1. Validate required fields
-                if (!row['Course ID'] || !row['Title']) {
-                    throw new Error('Missing required fields: Course ID or Title');
+                if (!row['Course ID'] && row['Course ID'] !== 0) {
+                    throw new Error('Missing Course ID');
+                }
+                if (!row['Title']) {
+                    throw new Error('Missing Title');
                 }
 
                 // 2. Parse course ID
-                const { courseCode, sectionNumber } = this.parseCourseId(row['Course ID']);
+                let courseCode, sectionNumber;
+                try {
+                    const parsed = this.parseCourseId(row['Course ID']);
+                    courseCode = parsed.courseCode;
+                    sectionNumber = parsed.sectionNumber;
+                } catch (error) {
+                    throw new Error(`Invalid Course ID format: ${error.message}`);
+                }
 
                 // 3. Get or create course
                 let course = results.coursesMap.get(courseCode);
                 if (!course) {
+                    const credits = row['Credits'] ? parseInt(row['Credits']) : 3;
                     course = new Course(
                         this.nextCourseId++,
                         courseCode,
-                        row['Title'],
-                        parseInt(row['Credits']) || 3
+                        String(row['Title']),
+                        isNaN(credits) ? 3 : credits
                     );
                     results.coursesMap.set(courseCode, course);
                 }
 
                 // 4. Create section
+                const enrollment = row['Max Enrollment'] ? parseInt(row['Max Enrollment']) : 30;
+                const crn = row['CRN'] ? String(row['CRN']) : null;
+                const instructor = row['Instructor'] ? String(row['Instructor']) : 'TBD';
+
                 const section = new Section(
                     this.nextSectionId++,
                     course.id,
                     sectionNumber,
-                    row['Instructor'] || 'TBD',
-                    parseInt(row['Max Enrollment']) || 30,
+                    instructor,
+                    isNaN(enrollment) ? 30 : enrollment,
                     1, // duration
-                    row['CRN'] || null
+                    crn
                 );
                 results.sections.push(section);
 
                 // 5. Parse days
                 const days = this.parseDays(row['Days']);
                 if (days.length === 0) {
-                    results.warnings.push(`Row ${rowNum}: No valid days found`);
+                    results.warnings.push(`Row ${rowNum} (${courseCode}-${sectionNumber}): No valid days found - section created but not scheduled`);
+                    return; // Skip scheduling but section is created
                 }
 
-                // 6. Match or create room
+                // 6. Validate time fields before processing schedule
+                if (!row['Start Time'] && row['Start Time'] !== 0) {
+                    results.warnings.push(`Row ${rowNum} (${courseCode}-${sectionNumber}): Missing Start Time - section created but not scheduled`);
+                    return;
+                }
+                if (!row['End Time'] && row['End Time'] !== 0) {
+                    results.warnings.push(`Row ${rowNum} (${courseCode}-${sectionNumber}): Missing End Time - section created but not scheduled`);
+                    return;
+                }
+
+                // 7. Match or create room
                 let room;
                 try {
                     room = this.matchOrCreateRoom(row['Building'], row['Room'], true);
@@ -2107,10 +2151,11 @@ class Scheduler {
                         results.roomsCreated.add(room);
                     }
                 } catch (error) {
-                    throw new Error(`Room error: ${error.message}`);
+                    results.warnings.push(`Row ${rowNum} (${courseCode}-${sectionNumber}): ${error.message} - section created but not scheduled`);
+                    return;
                 }
 
-                // 7. Process schedule for each day
+                // 8. Process schedule for each day
                 days.forEach(day => {
                     try {
                         // Ensure day exists in config
@@ -2140,7 +2185,7 @@ class Scheduler {
                         });
 
                     } catch (error) {
-                        results.errors.push(`Row ${rowNum}, ${day}: ${error.message}`);
+                        results.errors.push(`Row ${rowNum} (${courseCode}-${sectionNumber}), ${day}: ${error.message}`);
                     }
                 });
 
